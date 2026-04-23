@@ -24,8 +24,28 @@ CREATE POLICY "commission_plans_write" ON commission_plans
   );
 
 -- Add UNIQUE on commission_plans.name (needed for ON CONFLICT)
+-- Postgres doesn't support ADD CONSTRAINT IF NOT EXISTS — use DO block
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'commission_plans_name_key'
+  ) THEN
+    ALTER TABLE commission_plans
+      ADD CONSTRAINT commission_plans_name_key UNIQUE (name);
+  END IF;
+END $$;
+
+-- 2b. Widen percentage columns from NUMERIC(6,4) to NUMERIC(7,4) so 100.0000 fits
 ALTER TABLE commission_plans
-  ADD CONSTRAINT IF NOT EXISTS commission_plans_name_key UNIQUE (name);
+  ALTER COLUMN seller_percentage         TYPE NUMERIC(7,4),
+  ALTER COLUMN secondary_seller_percentage TYPE NUMERIC(7,4),
+  ALTER COLUMN manager_percentage        TYPE NUMERIC(7,4),
+  ALTER COLUMN owner_percentage          TYPE NUMERIC(7,4),
+  ALTER COLUMN company_percentage        TYPE NUMERIC(7,4),
+  ALTER COLUMN primary_split_ratio       TYPE NUMERIC(7,4),
+  ALTER COLUMN secondary_split_ratio     TYPE NUMERIC(7,4),
+  ALTER COLUMN upfront_percentage        TYPE NUMERIC(7,4),
+  ALTER COLUMN monthly_percentage        TYPE NUMERIC(7,4);
 
 -- 3. Seed commission plans (idempotent via ON CONFLICT on name)
 INSERT INTO commission_plans (
