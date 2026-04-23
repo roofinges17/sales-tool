@@ -37,7 +37,9 @@ interface QuoteDetail {
   valid_until?: string | null;
   notes?: string | null;
   created_at: string;
-  account?: { id: string; name: string } | null;
+  accept_token?: string | null;
+  accepted_at?: string | null;
+  account?: { id: string; name: string; email?: string | null } | null;
   assigned_to?: { id: string; name: string } | null;
   department?: { id: string; name: string } | null;
   quote_line_items?: QuoteLineItem[];
@@ -91,6 +93,8 @@ function QuoteDetailContent() {
   const [updating, setUpdating] = useState(false);
   const [newNote, setNewNote] = useState("");
   const [notes, setNotes] = useState<Array<{ id: string; content: string; author_name?: string; created_at: string }>>([]);
+  const [copied, setCopied] = useState(false);
+  const [generatingLink, setGeneratingLink] = useState(false);
 
   useEffect(() => {
     if (!quoteId) return;
@@ -102,11 +106,106 @@ function QuoteDetailContent() {
     setLoading(true);
     const { data } = await supabase()
       .from("quotes")
-      .select("*, account:account_id(id, name), assigned_to:assigned_to_id(id, name), department:department_id(id, name), quote_line_items(*)")
+      .select("*, accept_token, accepted_at, account:account_id(id, name, email), assigned_to:assigned_to_id(id, name), department:department_id(id, name), quote_line_items(*)")
       .eq("id", quoteId!)
       .single();
     setQuote(data as QuoteDetail | null);
     setLoading(false);
+  }
+
+  async function downloadPdf() {
+    if (!quote) return;
+    const { jsPDF } = await import("jspdf");
+    const doc = new jsPDF("p", "mm", "a4");
+    const margin = 20;
+    let y = 20;
+
+    doc.setFontSize(18);
+    doc.setFont("helvetica", "bold");
+    doc.text("ESTIMATE", margin, y);
+    y += 10;
+
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text("Roofing Experts", margin, y); y += 5;
+    doc.text("roofingex.com · info@roofingex.com", margin, y); y += 12;
+
+    doc.setFontSize(9);
+    doc.text(`Estimate: ${quote.name}`, margin, y);
+    doc.text(`Date: ${formatDate(quote.created_at)}`, margin + 70, y);
+    doc.text(`Valid: ${formatDate(quote.valid_until)}`, margin + 140, y);
+    y += 12;
+
+    const acct = quote.account as { name?: string; email?: string | null } | null;
+    doc.setFont("helvetica", "bold");
+    doc.text("Customer", margin, y); y += 5;
+    doc.setFont("helvetica", "normal");
+    doc.text(acct?.name ?? "—", margin, y); y += 5;
+    if (acct?.email) { doc.text(acct.email, margin, y); y += 5; }
+    y += 6;
+
+    // Line items
+    doc.setFont("helvetica", "bold");
+    doc.text("Scope of Work", margin, y); y += 6;
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "normal");
+    doc.text("Item", margin, y);
+    doc.text("Qty", 130, y, { align: "right" });
+    doc.text("Unit", 155, y, { align: "right" });
+    doc.text("Total", 190, y, { align: "right" });
+    y += 4;
+    doc.setDrawColor(80, 80, 80);
+    doc.line(margin, y, 190, y); y += 5;
+
+    for (const item of quote.quote_line_items ?? []) {
+      doc.text(item.product_name, margin, y);
+      doc.text(String(item.quantity), 130, y, { align: "right" });
+      doc.text(formatCurrency(item.unit_price), 155, y, { align: "right" });
+      doc.text(formatCurrency(item.line_total), 190, y, { align: "right" });
+      y += 6;
+    }
+
+    y += 4;
+    doc.line(margin, y, 190, y); y += 6;
+    const rows: [string, string][] = [
+      ["Subtotal", formatCurrency(quote.subtotal)],
+    ];
+    if ((quote.discount_amount ?? 0) > 0) rows.push(["Discount", `−${formatCurrency(quote.discount_amount)}`]);
+    if ((quote.tax_amount ?? 0) > 0) rows.push([`Tax (${((quote.tax_rate ?? 0) * 100).toFixed(1)}%)`, formatCurrency(quote.tax_amount)]);
+    for (const [label, val] of rows) {
+      doc.text(label, margin, y);
+      doc.text(val, 190, y, { align: "right" });
+      y += 5;
+    }
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text("Total", margin, y);
+    doc.setTextColor(249, 115, 22);
+    doc.text(formatCurrency(quote.total), 190, y, { align: "right" });
+    doc.setTextColor(0, 0, 0);
+
+    doc.save(`${quote.name}.pdf`);
+  }
+
+  async function getOrCreateAcceptLink(): Promise<string> {
+    if (!quote) return "";
+    let token = quote.accept_token;
+    if (!token) {
+      setGeneratingLink(true);
+      token = crypto.randomUUID();
+      await supabase().from("quotes").update({ accept_token: token }).eq("id", quote.id);
+      setQuote((q) => q ? { ...q, accept_token: token! } : q);
+      setGeneratingLink(false);
+    }
+    const base = window.location.origin;
+    return `${base}/accept/?token=${token}`;
+  }
+
+  async function copyAcceptLink() {
+    const link = await getOrCreateAcceptLink();
+    await navigator.clipboard.writeText(link);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
   }
 
   async function loadNotes() {
@@ -291,6 +390,22 @@ function QuoteDetailContent() {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
+          {/* PDF download */}
+          <Button variant="secondary" onClick={downloadPdf} title="Download PDF">
+            <svg className="mr-1.5 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            PDF
+          </Button>
+          {/* Accept link */}
+          {(quote.status === "SENT" || quote.status === "DRAFT") && (
+            <Button variant="secondary" loading={generatingLink} onClick={copyAcceptLink}>
+              <svg className="mr-1.5 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+              </svg>
+              {copied ? "Copied!" : "Copy Accept Link"}
+            </Button>
+          )}
           {quote.status === "DRAFT" && (
             <Button variant="secondary" loading={updating} onClick={() => updateStatus("SENT")}>
               Mark Sent
