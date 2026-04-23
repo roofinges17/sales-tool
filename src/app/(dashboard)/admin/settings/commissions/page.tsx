@@ -10,32 +10,44 @@ import { Modal } from "@/components/ui/Modal";
 import { Table, type Column } from "@/components/ui/Table";
 import { Badge } from "@/components/ui/Badge";
 
+// Actual DB columns per information_schema (Phase 4 schema)
 interface CommissionPlan {
   id: string;
   name: string;
   description: string | null;
-  department: string;
-  lead_source: string;
+  lead_source: string | null;
+  department_id: string | null;
   manager_percentage: number;
-  special_percentage: number;
-  system_percentage: number;
+  owner_percentage: number;
+  seller_percentage: number;
+  secondary_seller_percentage: number;
   company_percentage: number;
   primary_split_ratio: number;
   secondary_split_ratio: number;
+  upfront_percentage: number | null;
   is_active: boolean;
+  // joined
+  departments?: { id: string; name: string } | null;
 }
 
-const EMPTY: Omit<CommissionPlan, "id"> = {
+interface Department {
+  id: string;
+  name: string;
+}
+
+const EMPTY: Omit<CommissionPlan, "id" | "departments"> = {
   name: "",
   description: "",
-  department: "Roofing",
   lead_source: "ALL",
+  department_id: null,
   manager_percentage: 18,
-  special_percentage: 5,
-  system_percentage: 5,
+  owner_percentage: 5,
+  seller_percentage: 5,
+  secondary_seller_percentage: 0,
   company_percentage: 72,
   primary_split_ratio: 70,
   secondary_split_ratio: 30,
+  upfront_percentage: null,
   is_active: true,
 };
 
@@ -48,12 +60,13 @@ const LEAD_SOURCE_OPTIONS = [
   { value: "Social Media", label: "Social Media" },
 ];
 
-function pct(n: number) {
-  return `${n.toFixed(1)}%`;
+function pct(n: number | null | undefined) {
+  return n != null ? `${Number(n).toFixed(1)}%` : "—";
 }
 
 export default function CommissionPlansPage() {
   const [plans, setPlans] = useState<CommissionPlan[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<CommissionPlan | null>(null);
   const [isNew, setIsNew] = useState(false);
@@ -62,18 +75,23 @@ export default function CommissionPlansPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase()
-      .from("commission_plans")
-      .select("*")
-      .order("name");
-    if (data) setPlans(data as CommissionPlan[]);
+    const [{ data: plansData }, { data: deptData }] = await Promise.all([
+      supabase()
+        .from("commission_plans")
+        .select("*, departments(id, name)")
+        .order("name"),
+      supabase().from("departments").select("id, name").eq("is_active", true).order("name"),
+    ]);
+    if (plansData) setPlans(plansData as CommissionPlan[]);
+    if (deptData) setDepartments(deptData as Department[]);
     setLoading(false);
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
   const openNew = () => {
-    setEditing({ id: "", ...EMPTY });
+    const firstDept = departments[0];
+    setEditing({ id: "", ...EMPTY, department_id: firstDept?.id ?? null });
     setIsNew(true);
     setError(null);
   };
@@ -86,7 +104,7 @@ export default function CommissionPlansPage() {
 
   const close = () => { setEditing(null); setIsNew(false); setError(null); };
 
-  const upd = <K extends keyof CommissionPlan>(field: K, value: CommissionPlan[K]) => {
+  function upd<K extends keyof CommissionPlan>(field: K, value: CommissionPlan[K]) {
     setEditing((prev) => {
       if (!prev) return prev;
       const next = { ...prev, [field]: value };
@@ -95,10 +113,10 @@ export default function CommissionPlansPage() {
       }
       return next;
     });
-  };
+  }
 
   const baseProfitTotal = editing
-    ? editing.manager_percentage + editing.special_percentage + editing.system_percentage + editing.company_percentage
+    ? Number(editing.manager_percentage) + Number(editing.owner_percentage) + Number(editing.seller_percentage) + Number(editing.company_percentage)
     : 0;
   const pctValid = Math.abs(baseProfitTotal - 100) < 0.01;
 
@@ -109,23 +127,22 @@ export default function CommissionPlansPage() {
     const payload = {
       name: editing.name.trim(),
       description: editing.description?.trim() || null,
-      department: editing.department,
-      lead_source: editing.lead_source,
+      lead_source: editing.lead_source || "ALL",
+      department_id: editing.department_id || null,
       manager_percentage: editing.manager_percentage,
-      special_percentage: editing.special_percentage,
-      system_percentage: editing.system_percentage,
+      owner_percentage: editing.owner_percentage,
+      seller_percentage: editing.seller_percentage,
+      secondary_seller_percentage: editing.secondary_seller_percentage,
       company_percentage: editing.company_percentage,
       primary_split_ratio: editing.primary_split_ratio,
       secondary_split_ratio: editing.secondary_split_ratio,
+      upfront_percentage: editing.upfront_percentage,
       is_active: editing.is_active,
     };
-    if (isNew) {
-      const { error: err } = await supabase().from("commission_plans").insert(payload);
-      if (err) { setError(err.message); setSaving(false); return; }
-    } else {
-      const { error: err } = await supabase().from("commission_plans").update(payload).eq("id", editing.id);
-      if (err) { setError(err.message); setSaving(false); return; }
-    }
+    const { error: err } = isNew
+      ? await supabase().from("commission_plans").insert(payload)
+      : await supabase().from("commission_plans").update(payload).eq("id", editing.id);
+    if (err) { setError(err.message); setSaving(false); return; }
     setSaving(false);
     close();
     load();
@@ -141,6 +158,8 @@ export default function CommissionPlansPage() {
     load();
   };
 
+  const deptOptions = departments.map((d) => ({ value: d.id, label: d.name }));
+
   const columns: Column<CommissionPlan>[] = [
     {
       key: "name", header: "Plan",
@@ -151,18 +170,28 @@ export default function CommissionPlansPage() {
         </div>
       ),
     },
-    { key: "department", header: "Dept", render: (p) => <span className="text-zinc-400">{p.department}</span> },
+    {
+      key: "department_id", header: "Dept",
+      render: (p) => (
+        <span className="text-zinc-400">
+          {(p.departments as { name?: string } | null)?.name ?? "—"}
+        </span>
+      ),
+    },
     {
       key: "lead_source", header: "Lead Source",
       render: (p) => (
-        <Badge variant={p.lead_source === "ALL" ? "default" : "blue"}>{p.lead_source}</Badge>
+        <Badge variant={!p.lead_source || p.lead_source === "ALL" ? "default" : "blue"}>
+          {p.lead_source ?? "ALL"}
+        </Badge>
       ),
     },
     { key: "manager_percentage", header: "Manager", render: (p) => <span className="text-zinc-400">{pct(p.manager_percentage)}</span> },
-    { key: "special_percentage", header: "Special", render: (p) => <span className="text-zinc-400">{pct(p.special_percentage)}</span> },
+    { key: "owner_percentage",   header: "Owner",   render: (p) => <span className="text-zinc-400">{pct(p.owner_percentage)}</span> },
+    { key: "seller_percentage",  header: "Seller",  render: (p) => <span className="text-zinc-400">{pct(p.seller_percentage)}</span> },
     { key: "company_percentage", header: "Company", render: (p) => <span className="text-zinc-400">{pct(p.company_percentage)}</span> },
     {
-      key: "primary_split_ratio", header: "Seller Split",
+      key: "primary_split_ratio", header: "Split",
       render: (p) => <span className="text-xs text-zinc-500">{p.primary_split_ratio}/{p.secondary_split_ratio}</span>,
     },
     {
@@ -200,13 +229,13 @@ export default function CommissionPlansPage() {
             <div className="space-y-1.5 text-sm text-zinc-400">
               <p className="font-medium text-zinc-200">How commissions work</p>
               <p>
-                <span className="font-medium text-emerald-400">Seller</span> earns the markup above redline (Sell Price − Redline). If redline is $10 and they sell at $15, they make $5. This is not a percentage.
+                <span className="font-medium text-emerald-400">Seller markup</span> — earned above redline (Sell Price − Redline). Not a percentage of base profit.
               </p>
               <p>
-                <span className="font-medium text-brand">Manager, Special, System, Company</span> split the base profit (Redline − Cost) by the percentages below. Must total 100%.
+                <span className="font-medium text-brand">Manager, Owner, Seller %, Company</span> split the base profit (Redline − Cost) by the percentages below. Must total 100%.
               </p>
               <p>
-                <span className="font-medium text-amber-400">When is commission paid?</span> On job completion. If an upfront payment is collected, each role gets their proportional share immediately. Remainder paid on completion.
+                <span className="font-medium text-amber-400">When is commission paid?</span> On job completion. If an upfront payment is collected, each role gets their proportional share immediately.
               </p>
             </div>
           </div>
@@ -221,7 +250,7 @@ export default function CommissionPlansPage() {
             loading={loading}
             keyExtractor={(p) => p.id}
             onRowClick={openEdit}
-            emptyMessage="No commission plans yet"
+            emptyMessage="No commission plans yet. Run the seed migration to add defaults."
           />
         </CardContent>
       </Card>
@@ -239,15 +268,15 @@ export default function CommissionPlansPage() {
               />
               <Select
                 label="Department"
-                value={editing.department}
-                onChange={(e) => upd("department", e.target.value)}
-                options={[{ value: "Roofing", label: "Roofing" }]}
+                value={editing.department_id ?? ""}
+                onChange={(e) => upd("department_id", e.target.value || null)}
+                options={[{ value: "", label: "— select dept —" }, ...deptOptions]}
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <Select
                 label="Lead Source"
-                value={editing.lead_source}
+                value={editing.lead_source ?? "ALL"}
                 onChange={(e) => upd("lead_source", e.target.value)}
                 options={LEAD_SOURCE_OPTIONS}
               />
@@ -255,15 +284,15 @@ export default function CommissionPlansPage() {
                 label="Description"
                 value={editing.description ?? ""}
                 onChange={(e) => upd("description", e.target.value)}
-                placeholder="Optional description"
+                placeholder="Optional"
               />
             </div>
 
-            {/* Seller info */}
+            {/* Seller markup info */}
             <div className="rounded-xl border border-emerald-900/40 bg-emerald-950/20 p-4">
-              <p className="mb-1 text-sm font-semibold text-emerald-400">Seller Commission</p>
+              <p className="mb-1 text-sm font-semibold text-emerald-400">Seller Markup (not a percentage)</p>
               <p className="text-sm text-zinc-400">
-                Seller earns the <span className="font-medium text-zinc-200">markup above redline</span> (Sell Price − Redline). Not a percentage.
+                Seller earns <span className="font-medium text-zinc-200">Sell Price − Redline</span> on every job. The percentages below only split base profit among management.
               </p>
             </div>
 
@@ -272,38 +301,22 @@ export default function CommissionPlansPage() {
               <div className="mb-3 flex items-center justify-between">
                 <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Base Profit Split (Redline − Cost)</p>
                 <span className={`text-xs font-medium ${pctValid ? "text-emerald-400" : "text-red-400"}`}>
-                  Total: {baseProfitTotal.toFixed(1)}%{!pctValid && " (must equal 100%)"}
+                  Total: {baseProfitTotal.toFixed(1)}%{!pctValid && " (must = 100%)"}
                 </span>
               </div>
               <div className="grid grid-cols-4 gap-3">
-                <Input
-                  label="Manager %"
-                  type="number"
-                  step="0.1"
+                <Input label="Manager %" type="number" step="0.1"
                   value={editing.manager_percentage}
-                  onChange={(e) => upd("manager_percentage", Number(e.target.value))}
-                />
-                <Input
-                  label="Special %"
-                  type="number"
-                  step="0.1"
-                  value={editing.special_percentage}
-                  onChange={(e) => upd("special_percentage", Number(e.target.value))}
-                />
-                <Input
-                  label="System %"
-                  type="number"
-                  step="0.1"
-                  value={editing.system_percentage}
-                  onChange={(e) => upd("system_percentage", Number(e.target.value))}
-                />
-                <Input
-                  label="Company %"
-                  type="number"
-                  step="0.1"
+                  onChange={(e) => upd("manager_percentage", Number(e.target.value))} />
+                <Input label="Owner %" type="number" step="0.1"
+                  value={editing.owner_percentage}
+                  onChange={(e) => upd("owner_percentage", Number(e.target.value))} />
+                <Input label="Seller % (base)" type="number" step="0.1"
+                  value={editing.seller_percentage}
+                  onChange={(e) => upd("seller_percentage", Number(e.target.value))} />
+                <Input label="Company %" type="number" step="0.1"
                   value={editing.company_percentage}
-                  onChange={(e) => upd("company_percentage", Number(e.target.value))}
-                />
+                  onChange={(e) => upd("company_percentage", Number(e.target.value))} />
               </div>
               <p className="mt-2 text-xs text-zinc-600">Must total 100%.</p>
             </div>
@@ -312,31 +325,18 @@ export default function CommissionPlansPage() {
             <div>
               <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-500">Seller Split (two sellers on a deal)</p>
               <div className="grid grid-cols-2 gap-3">
-                <Input
-                  label="Primary Seller %"
-                  type="number"
+                <Input label="Primary Seller %" type="number"
                   value={editing.primary_split_ratio}
-                  onChange={(e) => upd("primary_split_ratio", Number(e.target.value))}
-                />
-                <Input
-                  label="Secondary Seller %"
-                  type="number"
-                  value={editing.secondary_split_ratio}
-                  disabled
-                />
+                  onChange={(e) => upd("primary_split_ratio", Number(e.target.value))} />
+                <Input label="Secondary Seller %" type="number"
+                  value={editing.secondary_split_ratio} disabled />
               </div>
-              <p className="mt-2 text-xs text-zinc-600">
-                Seller markup splits {editing.primary_split_ratio}/{editing.secondary_split_ratio} between primary and secondary seller.
-              </p>
             </div>
 
             <label className="flex cursor-pointer items-center gap-2">
-              <input
-                type="checkbox"
-                checked={editing.is_active}
+              <input type="checkbox" checked={editing.is_active}
                 onChange={(e) => upd("is_active", e.target.checked)}
-                className="h-4 w-4 rounded border-zinc-700 bg-zinc-900 text-brand"
-              />
+                className="h-4 w-4 rounded border-zinc-700 bg-zinc-900 text-brand" />
               <span className="text-sm text-zinc-200">Active</span>
             </label>
 

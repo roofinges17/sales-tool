@@ -1,5 +1,5 @@
 -- Phase 13 migrations
--- Run in Supabase SQL editor or via supabase db push
+-- Run in Supabase SQL editor or via Management API
 
 -- 1. Add accept_token to quotes
 ALTER TABLE quotes
@@ -7,30 +7,15 @@ ALTER TABLE quotes
 
 CREATE INDEX IF NOT EXISTS quotes_accept_token_idx ON quotes(accept_token) WHERE accept_token IS NOT NULL;
 
--- 2. Commission plans table (matches source app column names)
-CREATE TABLE IF NOT EXISTS commission_plans (
-  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name                  TEXT NOT NULL UNIQUE,
-  description           TEXT,
-  department            TEXT NOT NULL DEFAULT 'Roofing',
-  lead_source           TEXT NOT NULL DEFAULT 'ALL',
-  manager_percentage    NUMERIC(6,2) NOT NULL DEFAULT 18,
-  special_percentage    NUMERIC(6,2) NOT NULL DEFAULT 5,
-  system_percentage     NUMERIC(6,2) NOT NULL DEFAULT 5,
-  company_percentage    NUMERIC(6,2) NOT NULL DEFAULT 72,
-  primary_split_ratio   NUMERIC(6,2) NOT NULL DEFAULT 70,
-  secondary_split_ratio NUMERIC(6,2) NOT NULL DEFAULT 30,
-  is_active             BOOLEAN NOT NULL DEFAULT TRUE,
-  created_at            TIMESTAMPTZ DEFAULT NOW(),
-  updated_at            TIMESTAMPTZ DEFAULT NOW()
-);
-
+-- 2. RLS for commission_plans (table created in Phase 4)
 ALTER TABLE commission_plans ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY IF NOT EXISTS "commission_plans_read" ON commission_plans
+DROP POLICY IF EXISTS "commission_plans_read" ON commission_plans;
+CREATE POLICY "commission_plans_read" ON commission_plans
   FOR SELECT USING (auth.role() = 'authenticated');
 
-CREATE POLICY IF NOT EXISTS "commission_plans_write" ON commission_plans
+DROP POLICY IF EXISTS "commission_plans_write" ON commission_plans;
+CREATE POLICY "commission_plans_write" ON commission_plans
   FOR ALL USING (
     EXISTS (
       SELECT 1 FROM profiles
@@ -38,12 +23,48 @@ CREATE POLICY IF NOT EXISTS "commission_plans_write" ON commission_plans
     )
   );
 
--- 3. Seed commission plans (idempotent)
-INSERT INTO commission_plans (name, description, department, lead_source, manager_percentage, special_percentage, system_percentage, company_percentage, primary_split_ratio, secondary_split_ratio, is_active)
-VALUES
-  ('Standard Roofing', 'Default plan for roofing sales', 'Roofing', 'ALL', 18, 5, 5, 72, 70, 30, true),
-  ('Referral Plan',    'For referral-sourced leads',    'Roofing', 'Referral',   18, 5, 5, 72, 100, 0, true),
-  ('Door Knock Plan',  'Self-generated leads',          'Roofing', 'Door Knock', 18, 5, 5, 72, 100, 0, true)
+-- 3. Seed commission plans using actual schema columns (department_id FK)
+-- Column mapping from source app: manager→manager, special→owner, system→seller, company→company
+INSERT INTO commission_plans (
+  name, description, lead_source, department_id,
+  manager_percentage, owner_percentage, seller_percentage, secondary_seller_percentage, company_percentage,
+  primary_split_ratio, secondary_split_ratio,
+  upfront_percentage, is_active
+)
+SELECT
+  'Standard Roofing', 'Default plan for roofing sales', 'ALL', d.id,
+  18, 5, 5, 0, 72,
+  70, 30,
+  NULL, true
+FROM departments d WHERE d.name = 'Roofing'
+ON CONFLICT (name) DO NOTHING;
+
+INSERT INTO commission_plans (
+  name, description, lead_source, department_id,
+  manager_percentage, owner_percentage, seller_percentage, secondary_seller_percentage, company_percentage,
+  primary_split_ratio, secondary_split_ratio,
+  upfront_percentage, is_active
+)
+SELECT
+  'Referral Plan', 'For referral-sourced leads', 'Referral', d.id,
+  18, 5, 5, 0, 72,
+  100, 0,
+  NULL, true
+FROM departments d WHERE d.name = 'Roofing'
+ON CONFLICT (name) DO NOTHING;
+
+INSERT INTO commission_plans (
+  name, description, lead_source, department_id,
+  manager_percentage, owner_percentage, seller_percentage, secondary_seller_percentage, company_percentage,
+  primary_split_ratio, secondary_split_ratio,
+  upfront_percentage, is_active
+)
+SELECT
+  'Door Knock Plan', 'Self-generated leads', 'Door Knock', d.id,
+  18, 5, 5, 0, 72,
+  100, 0,
+  NULL, true
+FROM departments d WHERE d.name = 'Roofing'
 ON CONFLICT (name) DO NOTHING;
 
 -- 4. Seed products (exact values from Alejandro)
