@@ -46,6 +46,7 @@ export default function UsersPage() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editUser, setEditUser] = useState<Partial<UserProfile & { password: string }> | null>(null);
   const [saving, setSaving] = useState(false);
@@ -154,27 +155,42 @@ export default function UsersPage() {
     },
   ];
 
+  const filtered = users.filter(
+    (u) =>
+      !search ||
+      u.name?.toLowerCase().includes(search.toLowerCase()) ||
+      u.email?.toLowerCase().includes(search.toLowerCase()),
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-50">Users</h1>
+          <h1 className="text-2xl font-bold text-zinc-50">Users &amp; Roles</h1>
           <p className="mt-1 text-sm text-zinc-500">Manage team member access and roles.</p>
         </div>
         <Button
           leftIcon={<svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>}
           onClick={openNew}
         >
-          Add User
+          Invite User
         </Button>
       </div>
 
       <div className="rounded-xl border border-amber-800/30 bg-amber-950/20 px-4 py-3 text-sm text-amber-300">
-        Note: Creating new auth users requires a Supabase Admin API call (service role). Use the Supabase dashboard to create auth users, then they will appear here after first login.
+        New users: create auth credentials in the Supabase dashboard first. The profile record will appear here after first login, or can be pre-created below.
+      </div>
+
+      <div className="max-w-xs">
+        <Input
+          placeholder="Search by name or email…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
       </div>
 
       <Card>
-        <Table columns={columns} data={users} loading={loading} keyExtractor={(r) => r.id} onRowClick={openEdit} emptyMessage="No users found." />
+        <Table columns={columns} data={filtered} loading={loading} keyExtractor={(r) => r.id} onRowClick={openEdit} emptyMessage="No users found." />
       </Card>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={(editUser as UserProfile)?.id ? "Edit User" : "Add User"}>
