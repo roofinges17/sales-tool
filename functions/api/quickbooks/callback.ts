@@ -10,6 +10,7 @@ interface Env {
   QB_REDIRECT_URI?: string;
   SUPABASE_URL: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
+  FOLIO_CACHE?: KVNamespace;
 }
 
 export const onRequestGet: PagesFunction<Env> = async (ctx) => {
@@ -17,12 +18,23 @@ export const onRequestGet: PagesFunction<Env> = async (ctx) => {
   const code = url.searchParams.get("code");
   const realmId = url.searchParams.get("realmId");
   const error = url.searchParams.get("error");
+  const state = url.searchParams.get("state");
 
   const origin = url.origin;
   const settingsUrl = `${origin}/admin/settings/quickbooks/`;
 
   if (error || !code || !realmId) {
     return Response.redirect(`${settingsUrl}?qb_error=${encodeURIComponent(error ?? "missing_params")}`, 302);
+  }
+
+  // CSRF state validation — only enforced when FOLIO_CACHE is bound (skipped in local dev)
+  if (ctx.env.FOLIO_CACHE) {
+    const stored = state ? await ctx.env.FOLIO_CACHE.get(`qb_state:${state}`) : null;
+    if (!stored) {
+      return Response.redirect(`${settingsUrl}?qb_error=invalid_state`, 302);
+    }
+    // One-time use — consume immediately to prevent replay
+    await ctx.env.FOLIO_CACHE.delete(`qb_state:${state}`);
   }
 
   try {

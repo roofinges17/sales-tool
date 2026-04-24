@@ -6,6 +6,7 @@
 interface Env {
   QB_CLIENT_ID: string;
   QB_REDIRECT_URI?: string;
+  FOLIO_CACHE?: KVNamespace;
 }
 
 export const onRequestGet: PagesFunction<Env> = async (ctx) => {
@@ -20,6 +21,12 @@ export const onRequestGet: PagesFunction<Env> = async (ctx) => {
   const origin = new URL(ctx.request.url).origin;
   const redirectUri = ctx.env.QB_REDIRECT_URI ?? `${origin}/api/quickbooks/callback`;
   const state = crypto.randomUUID();
+
+  // Persist state so callback can validate it (CSRF protection).
+  // TTL 600s — OAuth round-trip should complete well within 10 minutes.
+  if (ctx.env.FOLIO_CACHE) {
+    await ctx.env.FOLIO_CACHE.put(`qb_state:${state}`, "1", { expirationTtl: 600 });
+  }
 
   const authUrl = new URL("https://appcenter.intuit.com/connect/oauth2");
   authUrl.searchParams.set("client_id", clientId);
