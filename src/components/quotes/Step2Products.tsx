@@ -192,11 +192,13 @@ export default function Step2Products() {
                     </div>
 
                     <div className="flex items-center gap-3 flex-shrink-0">
-                      <Badge variant={product.product_type === "PRODUCT" ? "blue" : "purple"}>
-                        {product.product_type}
-                      </Badge>
+                      <span className="hidden sm:inline">
+                        <Badge variant={product.product_type === "PRODUCT" ? "blue" : "purple"}>
+                          {product.product_type}
+                        </Badge>
+                      </span>
                       {product.unit && (
-                        <span className="text-caption text-text-tertiary">{product.unit}</span>
+                        <span className="hidden sm:inline text-caption text-text-tertiary">{product.unit}</span>
                       )}
                       <span className="text-body-sm font-medium text-status-green min-w-[4rem] text-right">
                         {fmt(product.default_price ?? product.price)}
@@ -266,8 +268,8 @@ export default function Step2Products() {
           )}
         </div>
 
-        {/* Right: RoofMeasure + DamageAnalysis + Estimate Items (hidden on mobile) */}
-        <div className="hidden lg:block space-y-4">
+        {/* Right: RoofMeasure + AI tools + Cart — stacks below catalog on mobile */}
+        <div className="space-y-4">
           <RoofMeasure onMeasured={handleRoofMeasured} />
           <DamageAnalysis
             products={products}
@@ -398,7 +400,7 @@ export default function Step2Products() {
                           if (!e.target.value || isNaN(num) || num <= 0)
                             e.target.value = String(item.quantity);
                         }}
-                        className="w-16 h-6 rounded border border-border bg-surface-2 px-1.5 text-caption text-text-primary text-center focus:border-accent focus:outline-none"
+                        className="w-16 h-8 rounded border border-border bg-surface-2 px-1.5 text-caption text-text-primary text-center focus:border-accent focus:outline-none"
                       />
                       {item.unit && (
                         <span className="text-text-muted">{item.unit}</span>

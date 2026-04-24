@@ -367,7 +367,7 @@ export default function PhotoVisualizerCanvas({ imageUrl, initialColorId, onExpo
               key={color.id}
               onClick={() => setSelectedColorId(color.id)}
               title={color.name}
-              className={`h-9 flex-1 min-w-[2.5rem] rounded-lg border-2 transition-all ${
+              className={`h-11 flex-1 min-w-[2.5rem] rounded-lg border-2 transition-all ${
                 selectedColorId === color.id
                   ? "border-white scale-110 shadow-lg shadow-white/10"
                   : "border-transparent hover:border-zinc-400 hover:scale-105"

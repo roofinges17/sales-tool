@@ -213,7 +213,7 @@ export default function MaterialAnalysis({ products, onAddToCart }: MaterialAnal
               </button>
             ) : (
               <div className="space-y-3">
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {previews.map((url, i) => (
                     <div key={i} className="relative aspect-square rounded-lg overflow-hidden border border-border-subtle">
                       {/* eslint-disable-next-line @next/next/no-img-element */}

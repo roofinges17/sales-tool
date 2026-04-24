@@ -290,8 +290,8 @@ function SaleDetailContent() {
             {/* Line items */}
             <div>
               <h3 className="text-sm font-semibold text-zinc-300 mb-3">Line Items</h3>
-              <div className="rounded-xl border border-zinc-800 overflow-hidden">
-                <table className="w-full text-sm">
+              <div className="rounded-xl border border-zinc-800 overflow-hidden overflow-x-auto">
+                <table className="w-full text-sm min-w-[480px]">
                   <thead className="border-b border-zinc-800 bg-zinc-900/60">
                     <tr className="text-xs uppercase tracking-wider text-zinc-500">
                       <th className="px-4 py-3 text-left">Item</th>
