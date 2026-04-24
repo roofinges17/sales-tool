@@ -266,7 +266,7 @@ export default function CommissionsPage() {
           loading={loading}
           keyExtractor={(r) => r.id}
           onRowClick={(row) => setSelectedEntry(row)}
-          emptyMessage="No commission entries found."
+          emptyMessage="No commissions yet. Commissions are created automatically when estimates are converted to contracts."
         />
         <div className="px-6 py-3 text-xs text-zinc-500 border-t border-zinc-800">
           {filtered.length} of {entries.length} entries

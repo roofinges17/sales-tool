@@ -51,7 +51,8 @@ export default function WorkflowsPage() {
       .select("id, name")
       .eq("is_active", true)
       .order("name")
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) toast.error("Failed to load departments: " + error.message);
         const depts = (data as Department[]) ?? [];
         setDepartments(depts);
         if (depts.length > 0) setSelectedDeptId(depts[0].id);
@@ -65,21 +66,23 @@ export default function WorkflowsPage() {
 
   async function loadWorkflow(deptId: string) {
     setLoading(true);
-    const { data: templates } = await supabase()
+    const { data: templates, error: tmplErr } = await supabase()
       .from("workflow_templates")
       .select("*")
       .eq("department_id", deptId)
       .limit(1);
+    if (tmplErr) toast.error("Failed to load workflow: " + tmplErr.message);
 
     const tmpl = templates?.[0] as WorkflowTemplate | undefined ?? null;
     setTemplate(tmpl);
 
     if (tmpl) {
-      const { data: stagesData } = await supabase()
+      const { data: stagesData, error: stagesErr } = await supabase()
         .from("workflow_stages")
         .select("*")
         .eq("template_id", tmpl.id)
         .order("sort_order");
+      if (stagesErr) toast.error("Failed to load stages: " + stagesErr.message);
       setStages((stagesData as WorkflowStage[]) ?? []);
     } else {
       setStages([]);
