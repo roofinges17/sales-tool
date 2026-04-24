@@ -5,8 +5,13 @@
 // Input:  { photos: Array<{ base64: string; mediaType: string }>, material_type?: "soffit" | "fascia" | "gutter" | "all" }
 // Output: { items: MaterialItem[], totalLinearFt: number, model: string, mock?: true }
 
+import { guard } from "../_guard";
+
 export interface Env {
   OPENAI_API_KEY?: string;
+  SUPABASE_URL?: string;
+  SUPABASE_SERVICE_ROLE_KEY?: string;
+  FOLIO_CACHE?: KVNamespace;
 }
 
 export interface MaterialItem {
@@ -101,6 +106,13 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     "Access-Control-Allow-Origin": "*",
     "Content-Type": "application/json",
   };
+
+  const { error: guardErr } = await guard(ctx.request, ctx.env, {
+    maxBodyBytes: 8 * 1024 * 1024, // 8 MB — up to 4 photos
+    ratePrefix: "vision",
+    rateLimit: 20,
+  });
+  if (guardErr) return guardErr;
 
   let body: { photos?: Array<{ base64: string; mediaType: string }>; material_type?: string };
   try {
@@ -201,7 +213,7 @@ export const onRequestOptions: PagesFunction<Env> = async () => {
     headers: {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
     },
   });
 };

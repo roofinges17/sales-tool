@@ -5,8 +5,13 @@
 // Input:  { photos: Array<{ base64: string; mediaType: "image/jpeg"|"image/png" }> }
 // Output: { items: DamageItem[], model: string, mock?: true }
 
+import { guard } from "../_guard";
+
 export interface Env {
   OPENAI_API_KEY?: string;
+  SUPABASE_URL?: string;
+  SUPABASE_SERVICE_ROLE_KEY?: string;
+  FOLIO_CACHE?: KVNamespace;
 }
 
 export interface DamageItem {
@@ -111,6 +116,13 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     "Content-Type": "application/json",
   };
 
+  const { error: guardErr } = await guard(ctx.request, ctx.env, {
+    maxBodyBytes: 8 * 1024 * 1024, // 8 MB — up to 4 photos
+    ratePrefix: "vision",
+    rateLimit: 20,
+  });
+  if (guardErr) return guardErr;
+
   let body: { photos?: Array<{ base64: string; mediaType: string }> };
   try {
     body = (await ctx.request.json()) as typeof body;
@@ -204,7 +216,7 @@ export const onRequestOptions: PagesFunction<Env> = async () => {
     headers: {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
     },
   });
 };

@@ -5,6 +5,7 @@
 // estimates with color swatches, damage badges, and linear footage for cart auto-fill.
 
 import { useRef, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 export interface MaterialItem {
   material_type: "soffit" | "fascia" | "gutter";
@@ -112,9 +113,13 @@ export default function MaterialAnalysis({ products, onAddToCart }: MaterialAnal
 
     try {
       const photoData = await Promise.all(photos.map(fileToBase64));
+      const { data: { session } } = await supabase().auth.getSession();
       const res = await fetch("/api/vision/material-detect", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({ photos: photoData }),
       });
       if (!res.ok) throw new Error(`Analysis failed (${res.status})`);

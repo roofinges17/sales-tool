@@ -6,8 +6,13 @@
 // Input:  { audio: string (base64), mimeType: string, fileName?: string }
 // Output: { transcript: string, items: VoiceItem[], model: string, mock?: true }
 
+import { guard } from "../_guard";
+
 export interface Env {
   OPENAI_API_KEY?: string;
+  SUPABASE_URL?: string;
+  SUPABASE_SERVICE_ROLE_KEY?: string;
+  FOLIO_CACHE?: KVNamespace;
 }
 
 export interface VoiceItem {
@@ -104,6 +109,13 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     "Access-Control-Allow-Origin": "*",
     "Content-Type": "application/json",
   };
+
+  const { error: guardErr } = await guard(ctx.request, ctx.env, {
+    maxBodyBytes: 25 * 1024 * 1024, // 25 MB — Whisper file limit
+    ratePrefix: "voice",
+    rateLimit: 20,
+  });
+  if (guardErr) return guardErr;
 
   let body: { audio?: string; mimeType?: string; fileName?: string };
   try {
@@ -242,7 +254,7 @@ export const onRequestOptions: PagesFunction<Env> = async () => {
     headers: {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
     },
   });
 };

@@ -6,6 +6,7 @@
 // Mobile-first: ≥44px mic button touch target.
 
 import { useRef, useState, useEffect, useCallback } from "react";
+import { supabase } from "@/lib/supabase";
 
 export interface VoiceItem {
   description: string;
@@ -124,9 +125,13 @@ export default function VoiceEstimateRecorder({ products, onAddToCart }: VoiceEs
       try {
         const base64 = await blobToBase64(blob);
         const baseMime = mimeTypeRef.current.split(";")[0];
+        const { data: { session } } = await supabase().auth.getSession();
         const res = await fetch("/api/voice/transcribe-estimate", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+          },
           body: JSON.stringify({ audio: base64, mimeType: baseMime }),
         });
         if (!res.ok) throw new Error(`Server error ${res.status}`);
