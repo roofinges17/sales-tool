@@ -23,6 +23,12 @@ const NAV_GROUPS_FULL = [
       { href: "/admin/settings/financing/", label: "Financing", icon: "M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" },
     ],
   },
+  {
+    label: "Integrations",
+    items: [
+      { href: "/admin/settings/quickbooks/", label: "QuickBooks", icon: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15v-4H7l5-8v4h4l-5 8z" },
+    ],
+  },
 ];
 
 // Managers see only the Sales section (no user/company/department management)
