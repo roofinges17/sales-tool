@@ -1,14 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useQuoteBuilder } from "@/lib/contexts/QuoteBuilderContext";
 import { Button } from "@/components/ui/Button";
-import { Badge } from "@/components/ui/Badge";
-import { geocodeAddress, MAPS_KEY_CONFIGURED } from "@/lib/maps";
-import { PlacesAutocompleteInput, type PlaceResult } from "@/components/ui/PlacesAutocompleteInput";
-import { pitchMultiplier } from "@/lib/pitch";
-import MapDrawingCanvas, { type DrawnSection } from "@/components/MapDrawingCanvas";
+import { RoofMeasure, type RoofData } from "@/components/RoofMeasure";
 import type { CartItem } from "@/lib/contexts/QuoteBuilderContext";
 
 interface Product {
@@ -39,7 +35,7 @@ function isRoofCode(code: string | null | undefined) {
 }
 
 export default function Step2Products() {
-  const { state, addToCart, removeFromCart, updateCartQty, updateCartPrice, setStep, subtotal, setVisualization, setFolioNumber } = useQuoteBuilder();
+  const { state, addToCart, removeFromCart, updateCartQty, updateCartPrice, setStep, subtotal } = useQuoteBuilder();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -49,14 +45,7 @@ export default function Step2Products() {
   const [manualSqftId, setManualSqftId] = useState<string | null>(null);
   const [manualSqftInput, setManualSqftInput] = useState("");
 
-  // Measurement state
-  const [address, setAddress] = useState("");
-  const [measuring, setMeasuring] = useState(false);
-  const [geoLoading, setGeoLoading] = useState(false);
-  const [geoError, setGeoError] = useState("");
-  const [geoResult, setGeoResult] = useState<{ lat: number; lng: number; formattedAddress: string } | null>(null);
-  const [canvasOpen, setCanvasOpen] = useState(false);
-  const [drawnSections, setDrawnSections] = useState<DrawnSection[]>([]);
+  const [measuredRoof, setMeasuredRoof] = useState<RoofData | null>(null);
 
   useEffect(() => {
     if (!state.departmentId) return;
@@ -140,79 +129,17 @@ export default function Step2Products() {
     setEditingPriceId(null);
   }
 
-  async function handleMeasure() {
-    if (!address.trim()) return;
-    setGeoLoading(true);
-    setGeoError("");
-    const result = await geocodeAddress(address.trim());
-    setGeoLoading(false);
-    if (!result) {
-      setGeoError("Address not found");
-      return;
-    }
-    setGeoResult(result);
-    setCanvasOpen(true);
+  function handleRoofMeasured(data: RoofData) {
+    setMeasuredRoof(data);
+    // Pre-fill folio lookup from lat/lng — not available here; Step3 handles it from address
   }
 
-  const handlePlaceSelect = useCallback((place: PlaceResult) => {
-    setGeoError("");
-    setGeoResult(place);
-    setCanvasOpen(true);
-    // Fire folio lookup in background — pre-populate Step 3 field
-    const addr = place.formattedAddress;
-    const parts = addr.split(",").map((s) => s.trim());
-    const street = parts[0] ?? addr;
-    const city = parts[1] ?? "";
-    const stateZip = (parts[2] ?? "").trim();
-    const zip = stateZip.replace(/[^0-9]/g, "").slice(0, 5);
-    fetch("/api/folio-lookup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ address: street, city, zip }),
-    })
-      .then((r) => r.ok ? r.json() : null)
-      .then((d: { folio?: string | null } | null) => {
-        if (d?.folio) setFolioNumber(d.folio);
-      })
-      .catch(() => {/* non-blocking */});
-  }, [setFolioNumber]);
-
-  function handleSaveSections(sections: DrawnSection[], compositeDataUrl?: string | null, colorId?: string | null) {
-    setDrawnSections(sections);
-    if (colorId !== undefined) setVisualization(colorId, compositeDataUrl ?? null);
-    setCanvasOpen(false);
-
-    // Add sections as cart line items
-    for (const sec of sections) {
-      if (!sec.productId) continue;
-      const existingProduct = products.find((p) => p.id === sec.productId);
-      const item: Omit<CartItem, "line_total"> = {
-        product_id: `${sec.productId}_${sec.id}`, // unique per section
-        product_name: `${sec.productName} (${Math.round(sec.actualSqft)} sf)`,
-        product_sku: sec.productCode,
-        product_description: `${sec.sectionType}${sec.sectionType === "SLOPED" ? ` · ${sec.pitch}` : ""} · ${Math.round(sec.planarSqft)} sf planar → ${Math.round(sec.actualSqft)} sf actual`,
-        quantity: 1,
-        unit_price: sec.lineTotal,
-        unit_cost: existingProduct?.cost ?? null,
-        min_price: existingProduct?.min_price ?? null,
-        max_price: existingProduct?.max_price ?? null,
-        default_price: sec.lineTotal,
-        product_type: "PRODUCT",
-        unit: "section",
-      };
-      addToCart(item);
-    }
+  function getAutoSqft(code: string | null | undefined): number {
+    if (!measuredRoof) return 0;
+    const c = (code ?? "").toUpperCase();
+    if (c === "FLAT" || c === "FLAT INSULATIONS") return measuredRoof.flatSqft;
+    return measuredRoof.slopedSqft || measuredRoof.totalSqft;
   }
-
-  // Only roof products are selectable inside the drawing canvas
-  const mapProducts = products
-    .filter((p) => p.default_price != null && isRoofCode(p.code))
-    .map((p) => ({
-      id: p.id,
-      name: p.name,
-      code: p.code ?? "",
-      default_price: p.default_price ?? 0,
-    }));
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
@@ -317,11 +244,15 @@ export default function Step2Products() {
                             </div>
                           ) : (
                             <button
-                              onClick={() => { setManualSqftId(product.id); setManualSqftInput(""); }}
+                              onClick={() => {
+                                setManualSqftId(product.id);
+                                const auto = getAutoSqft(product.code);
+                                setManualSqftInput(auto > 0 ? String(auto) : "");
+                              }}
                               className="text-xs text-text-muted hover:text-accent transition whitespace-nowrap"
-                              title="Enter sq ft manually"
+                              title={measuredRoof ? "Click to use measured area" : "Enter sq ft manually"}
                             >
-                              sq ft
+                              {measuredRoof ? `${getAutoSqft(product.code)} sf` : "sq ft"}
                             </button>
                           )}
                         </div>
@@ -347,68 +278,7 @@ export default function Step2Products() {
 
       {/* Right sidebar */}
       <div className="space-y-4">
-        {/* Roof Measurement card */}
-        <div className="rounded-lg border border-border-subtle bg-surface-1 overflow-hidden">
-          <div className="px-4 py-3 border-b border-border-subtle bg-gradient-to-r from-accent/10 to-status-teal/10 flex items-center gap-2">
-            <svg className="w-4 h-4 text-status-teal flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <h3 className="text-body-sm font-semibold text-text-primary">Roof Measurement</h3>
-            <span className="inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded-full font-medium border bg-status-teal/10 text-status-teal border-status-teal/20 text-xs">
-              Satellite
-            </span>
-          </div>
-          <div className="p-4">
-            <div className="space-y-3">
-              <p className="text-caption text-text-tertiary">
-                Enter property address to measure roof area using satellite imagery
-              </p>
-              {!MAPS_KEY_CONFIGURED && (
-                <p className="text-caption text-amber-400 bg-amber-400/10 rounded-md px-3 py-2">
-                  Satellite measurement is unavailable. Contact your administrator to enable it.
-                </p>
-              )}
-              <div className="flex gap-2">
-                <PlacesAutocompleteInput
-                  value={address}
-                  onChange={(v) => { setAddress(v); setGeoError(""); }}
-                  onSelect={handlePlaceSelect}
-                  placeholder="Enter property address..."
-                  className="flex-1"
-                />
-                <button
-                  onClick={handleMeasure}
-                  disabled={!address.trim() || geoLoading || !MAPS_KEY_CONFIGURED}
-                  className="inline-flex items-center justify-center font-medium rounded-md transition-all duration-150 disabled:opacity-50 disabled:pointer-events-none bg-gradient-accent shadow-glow-sm hover:shadow-glow hover:brightness-110 active:brightness-95 h-9 px-4 text-body text-white gap-2"
-                >
-                  {geoLoading ? (
-                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                  ) : "Measure"}
-                </button>
-              </div>
-              {geoError && <p className="text-caption text-red-400">{geoError}</p>}
-              {drawnSections.length > 0 && (
-                <div className="rounded-md bg-surface-3 p-2 space-y-1">
-                  {drawnSections.map((sec) => (
-                    <div key={sec.id} className="flex justify-between text-xs">
-                      <span className="text-text-tertiary">{sec.sectionType} · {Math.round(sec.actualSqft)} sf</span>
-                      <span className="text-text-primary font-medium">${sec.lineTotal.toFixed(2)}</span>
-                    </div>
-                  ))}
-                  <button
-                    onClick={() => setCanvasOpen(true)}
-                    className="w-full mt-1 py-1 rounded text-xs text-accent hover:text-accent-light transition-colors text-center"
-                  >
-                    Edit measurements
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <RoofMeasure onMeasured={handleRoofMeasured} />
 
         {/* Estimate Items card */}
         <div className="rounded-lg border border-border-subtle bg-surface-1 overflow-hidden">
@@ -537,19 +407,6 @@ export default function Step2Products() {
         </div>
       </div>
 
-      {/* MapDrawingCanvas modal */}
-      {canvasOpen && geoResult && (
-        <MapDrawingCanvas
-          lat={geoResult.lat}
-          lng={geoResult.lng}
-          zoom={20}
-          products={mapProducts}
-          sections={drawnSections}
-          onChange={setDrawnSections}
-          onClose={() => setCanvasOpen(false)}
-          onSave={(dataUrl, colorId) => handleSaveSections(drawnSections, dataUrl, colorId)}
-        />
-      )}
     </div>
   );
 }
