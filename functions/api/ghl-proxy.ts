@@ -1,8 +1,13 @@
 // Cloudflare Pages Function — GHL API proxy
 // Keeps the PIT token server-side; client posts intent, we forward to GHL.
+// PIT resolution order: company_settings.ghl_pit_token → GHL_PIT env var.
+
+import { createClient } from "@supabase/supabase-js";
 
 interface Env {
   GHL_PIT: string;
+  SUPABASE_URL?: string;
+  SUPABASE_SERVICE_ROLE_KEY?: string;
 }
 
 interface ProxyRequest {
@@ -16,9 +21,28 @@ const GHL_BASE = "https://services.leadconnectorhq.com";
 const GHL_VERSION = "2021-07-28";
 const LOCATION_ID = "DfkEocSccdPsDcgqrJug";
 
+async function resolvePit(env: Env): Promise<string | null> {
+  if (env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
+    try {
+      const sb = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
+      const { data } = await sb
+        .from("company_settings")
+        .select("ghl_pit_token, ghl_default_location_id")
+        .limit(1)
+        .maybeSingle();
+      if ((data as { ghl_pit_token?: string | null } | null)?.ghl_pit_token) {
+        return (data as { ghl_pit_token: string }).ghl_pit_token;
+      }
+    } catch {
+      // Fall through to env
+    }
+  }
+  return env.GHL_PIT ?? null;
+}
+
 export async function onRequestPost(ctx: { request: Request; env: Env }) {
   const { env, request } = ctx;
-  const pit = env.GHL_PIT;
+  const pit = await resolvePit(env);
 
   if (!pit) {
     return Response.json({ error: "GHL_PIT not configured" }, { status: 500 });
@@ -60,7 +84,7 @@ export async function onRequestPost(ctx: { request: Request; env: Env }) {
 export async function onRequestGet(ctx: { request: Request; env: Env }) {
   // GET version for easy pipeline listing from settings page
   const { env, request } = ctx;
-  const pit = env.GHL_PIT;
+  const pit = await resolvePit(env);
   if (!pit) return Response.json({ error: "GHL_PIT not configured" }, { status: 500 });
 
   const url = new URL(request.url);
