@@ -6,6 +6,10 @@ import { useQuoteBuilder } from "@/lib/contexts/QuoteBuilderContext";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { PlacesAutocompleteInput, type PlaceResult } from "@/components/ui/PlacesAutocompleteInput";
+import { AddressIntelCard, type AddressIntelResult } from "@/components/AddressIntelCard";
+
+const ROOF_SKUS = ["ALUMINUM", "FLAT", "FLAT INSULATIONS", "METAL", "SHINGLE", "TILE"];
+const FLAT_SKUS = ["FLAT", "FLAT INSULATIONS"];
 
 interface AccountResult {
   id: string;
@@ -17,34 +21,35 @@ interface AccountResult {
 }
 
 export default function Step3Customer() {
-  const { state, setExistingAccount, setIsNewCustomer, setNewCustomer, setStep, setFolioNumber } = useQuoteBuilder();
+  const { state, setExistingAccount, setIsNewCustomer, setNewCustomer, setStep, setFolioNumber, updateCartQty } = useQuoteBuilder();
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<AccountResult[]>([]);
   const [searching, setSearching] = useState(false);
-  const [folioLooking, setFolioLooking] = useState(false);
-  const [folioError, setFolioError] = useState<string | null>(null);
+  const [intelLoading, setIntelLoading] = useState(false);
+  const [intel, setIntel] = useState<AddressIntelResult | null>(null);
+  const [intelError, setIntelError] = useState<string | null>(null);
 
-  async function lookupFolioFromAddress(address: string, city: string, zip: string) {
-    setFolioLooking(true);
-    setFolioError(null);
+  async function fetchAddressIntel(address: string, city: string, zip: string, lat: number, lng: number) {
+    setIntelLoading(true);
+    setIntelError(null);
+    setIntel(null);
     try {
-      const res = await fetch("/api/folio-lookup", {
+      const res = await fetch("/api/address-intel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address, city, zip }),
+        body: JSON.stringify({ address: `${address}, ${city}`, lat, lng, zip }),
       });
       if (res.ok) {
-        const d = (await res.json()) as { folio?: string | null };
-        if (d?.folio) setFolioNumber(d.folio);
-        else setFolioError("No folio found for this address — enter manually.");
+        const d = (await res.json()) as AddressIntelResult;
+        setIntel(d);
+        if (d.folio) setFolioNumber(d.folio);
       } else {
-        setFolioError(`Folio lookup failed (${res.status}) — enter manually.`);
+        setIntelError("Address intelligence unavailable — folio entry may be manual.");
       }
-    } catch (err) {
-      console.warn("[Step3Customer] folio lookup failed:", err);
-      setFolioError("Folio lookup unavailable — enter manually.");
+    } catch {
+      setIntelError("Address intelligence unavailable — folio entry may be manual.");
     }
-    setFolioLooking(false);
+    setIntelLoading(false);
   }
 
   function handleAddressPlaceSelect(place: PlaceResult) {
@@ -61,7 +66,19 @@ export default function Step3Customer() {
       billing_state: stateCode,
       billing_zip: zip,
     });
-    lookupFolioFromAddress(street, city, zip);
+    if (place.lat && place.lng) {
+      fetchAddressIntel(street, city, zip, place.lat, place.lng);
+    }
+  }
+
+  function handleApplyMeasurements({ slopedSqft, flatSqft }: { slopedSqft: number; flatSqft: number }) {
+    for (const item of state.cart) {
+      const sku = (item.product_sku ?? "").toUpperCase();
+      if (!ROOF_SKUS.some((c) => sku.startsWith(c))) continue;
+      const isFlat = FLAT_SKUS.some((c) => sku.startsWith(c));
+      const qty = isFlat ? flatSqft : slopedSqft;
+      if (qty > 0) updateCartQty(item.product_id, qty);
+    }
   }
 
   async function handleSearch(q: string) {
@@ -206,38 +223,31 @@ export default function Step3Customer() {
               />
             </div>
           </div>
-          <div>
-            <p className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3">Folio Number</p>
-            <div className="flex items-center gap-2">
-              <Input
-                label=""
-                placeholder={folioLooking ? "Looking up…" : "Auto-filled from address or enter manually"}
-                value={state.folioNumber}
-                onChange={(e) => setFolioNumber(e.target.value)}
-              />
-              {!state.folioNumber && !folioLooking && state.newCustomer.billing_address_line1 && (
-                <button
-                  type="button"
-                  onClick={() => lookupFolioFromAddress(
-                    state.newCustomer.billing_address_line1,
-                    state.newCustomer.billing_city,
-                    state.newCustomer.billing_zip,
-                  )}
-                  className="shrink-0 text-xs text-brand hover:underline"
-                >
-                  Lookup
-                </button>
+          {/* Address Intelligence — auto-fires on address select */}
+          {(intelLoading || intel || intelError) && (
+            <div>
+              {intelError && !intelLoading && (
+                <p className="text-xs text-amber-400">{intelError}</p>
               )}
-              {folioLooking && (
-                <svg className="h-4 w-4 animate-spin text-zinc-400 shrink-0" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
+              {(intelLoading || intel) && (
+                <AddressIntelCard
+                  data={intel ?? {}}
+                  loading={intelLoading}
+                  onApplyMeasurements={state.cart.length > 0 ? handleApplyMeasurements : undefined}
+                />
               )}
             </div>
-            {folioError && !folioLooking && (
-              <p className="text-xs text-amber-400 mt-1">{folioError}</p>
-            )}
+          )}
+
+          {/* Folio override — shown after intel loads or always if intel unavailable */}
+          <div>
+            <p className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Folio Number</p>
+            <Input
+              label=""
+              placeholder="Auto-filled from address or enter manually"
+              value={state.folioNumber}
+              onChange={(e) => setFolioNumber(e.target.value)}
+            />
           </div>
         </div>
       )}
