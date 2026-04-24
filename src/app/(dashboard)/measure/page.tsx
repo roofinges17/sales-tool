@@ -149,6 +149,22 @@ export default function MeasurePage() {
         )}
       </div>
 
+      {/* Satellite thumbnail — shown as soon as lat/lng are known */}
+      {lat !== null && lng !== null && step === "done" && (
+        <div className="mb-4 rounded-xl overflow-hidden border border-border-subtle">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=20&size=600x400&maptype=satellite&markers=color:red%7C${lat},${lng}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_STATIC_KEY ?? ""}`}
+            alt="Satellite view of property"
+            className="w-full max-h-64 object-cover"
+            style={{ display: "block" }}
+          />
+          <div className="px-3 py-1.5 bg-surface-1 border-t border-border-subtle">
+            <p className="text-xs text-text-tertiary truncate">{address}</p>
+          </div>
+        </div>
+      )}
+
       {/* Results */}
       {intel && step === "done" && (
         <div className="space-y-4">
