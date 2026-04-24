@@ -77,6 +77,11 @@ export default function NewAccountPage() {
     setError(null);
 
     const { data: { user } } = await supabase().auth.getUser();
+    if (!user) {
+      setError("Your session expired. Please sign in again.");
+      setLoading(false);
+      return;
+    }
 
     const payload = {
       name: form.name.trim(),
