@@ -1,0 +1,7 @@
+name = "roofing-experts-sales-tool"
+compatibility_date = "2024-09-23"
+pages_build_output_dir = "out"
+
+[[kv_namespaces]]
+binding = "FOLIO_CACHE"
+id = "3bc545a3f04c4623a4499cdeb2c972ba"
