@@ -22,9 +22,11 @@ export default function Step3Customer() {
   const [searchResults, setSearchResults] = useState<AccountResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [folioLooking, setFolioLooking] = useState(false);
+  const [folioError, setFolioError] = useState<string | null>(null);
 
   async function lookupFolioFromAddress(address: string, city: string, zip: string) {
     setFolioLooking(true);
+    setFolioError(null);
     try {
       const res = await fetch("/api/folio-lookup", {
         method: "POST",
@@ -34,9 +36,13 @@ export default function Step3Customer() {
       if (res.ok) {
         const d = (await res.json()) as { folio?: string | null };
         if (d?.folio) setFolioNumber(d.folio);
+        else setFolioError("No folio found for this address — enter manually.");
+      } else {
+        setFolioError(`Folio lookup failed (${res.status}) — enter manually.`);
       }
-    } catch {
-      // non-blocking
+    } catch (err) {
+      console.warn("[Step3Customer] folio lookup failed:", err);
+      setFolioError("Folio lookup unavailable — enter manually.");
     }
     setFolioLooking(false);
   }
@@ -229,6 +235,9 @@ export default function Step3Customer() {
                 </svg>
               )}
             </div>
+            {folioError && !folioLooking && (
+              <p className="text-xs text-amber-400 mt-1">{folioError}</p>
+            )}
           </div>
         </div>
       )}

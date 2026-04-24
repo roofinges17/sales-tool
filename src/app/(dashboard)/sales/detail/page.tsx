@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Tabs } from "@/components/ui/Tabs";
 import { Modal } from "@/components/ui/Modal";
+import { isUuid } from "@/lib/uuid";
 
 interface SaleLineItem {
   id: string;
@@ -106,7 +107,9 @@ type TabKey = "overview" | "payments" | "workflow" | "commission";
 
 function SaleDetailContent() {
   const searchParams = useSearchParams();
-  const saleId = searchParams.get("id");
+  const rawId = searchParams.get("id");
+  const saleId = isUuid(rawId) ? rawId : null;
+  const invalidId = rawId !== null && saleId === null;
   const { user } = useAuth();
   const [sale, setSale] = useState<SaleDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -199,6 +202,16 @@ function SaleDetailContent() {
     setPaymentModal(false);
     setNewPayment({ amount: "", payment_date: new Date().toISOString().split("T")[0], payment_method: "CHECK", reference_number: "", notes: "" });
     loadSale();
+  }
+
+  if (invalidId) {
+    return (
+      <div className="rounded-xl border border-amber-800/50 bg-amber-950/30 px-6 py-8 text-center">
+        <p className="text-amber-300 font-medium">Invalid contract ID</p>
+        <p className="text-sm text-zinc-400 mt-1">The link you followed doesn&apos;t point to a valid contract.</p>
+        <a href="/sales/" className="text-brand text-sm hover:underline mt-3 inline-block">Back to Contracts</a>
+      </div>
+    );
   }
 
   if (loading) {

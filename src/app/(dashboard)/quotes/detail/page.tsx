@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { Tabs } from "@/components/ui/Tabs";
 import PhotoUpload from "@/components/quotes/PhotoUpload";
 import PhotoGallery, { type ProjectPhoto } from "@/components/quotes/PhotoGallery";
+import { isUuid } from "@/lib/uuid";
 
 interface QuoteLineItem {
   id: string;
@@ -97,7 +98,9 @@ async function getNextContractNumber(prefix: string): Promise<string> {
 
 function QuoteDetailContent() {
   const searchParams = useSearchParams();
-  const quoteId = searchParams.get("id");
+  const rawId = searchParams.get("id");
+  const quoteId = isUuid(rawId) ? rawId : null;
+  const invalidId = rawId !== null && quoteId === null;
   const { user } = useAuth();
   const [quote, setQuote] = useState<QuoteDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -160,8 +163,9 @@ function QuoteDetailContent() {
           const folioData = (await folioRes.json()) as { folio?: string | null };
           folioNumber = folioData.folio ?? undefined;
         }
-      } catch {
-        // folio lookup failure is non-blocking
+      } catch (folioErr) {
+        // non-blocking — PDF still generates without folio
+        console.warn("[quotes/detail] folio lookup failed for PDF:", folioErr);
       }
     }
 
@@ -501,6 +505,16 @@ function QuoteDetailContent() {
     });
     setNewNote("");
     loadNotes();
+  }
+
+  if (invalidId) {
+    return (
+      <div className="rounded-xl border border-amber-800/50 bg-amber-950/30 px-6 py-8 text-center">
+        <p className="text-amber-300 font-medium">Invalid estimate ID</p>
+        <p className="text-sm text-zinc-400 mt-1">The link you followed doesn&apos;t point to a valid estimate.</p>
+        <a href="/quotes/" className="text-brand text-sm hover:underline mt-3 inline-block">Back to Estimates</a>
+      </div>
+    );
   }
 
   if (loading) {
