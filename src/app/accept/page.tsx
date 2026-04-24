@@ -199,32 +199,39 @@ export default function AcceptPage() {
     if (!quote) return;
     setSubmitting(true);
 
-    const now = new Date().toISOString();
-    const payload: Record<string, unknown> = {
-      status: "accepted",
-      accepted_at: now,
-    };
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token") ?? "";
 
+    const body: { token: string; signatureDataUrl?: string } = { token };
     if (signMode === "electronic" && signatureDataUrl) {
-      payload.customer_signature_data_url = signatureDataUrl;
-      payload.signed_at = now;
+      body.signatureDataUrl = signatureDataUrl;
     }
 
-    const { error } = await supabase()
-      .from("quotes")
-      .update(payload)
-      .eq("id", quote.id);
+    try {
+      const res = await fetch("/api/accept-automate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = (await res.json()) as { ok?: boolean; error?: string; alreadyAccepted?: boolean };
 
-    setSubmitting(false);
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error ?? "Failed to record acceptance");
+      }
 
-    if (error) {
+      const now = new Date().toISOString();
+      setQuote({
+        ...quote,
+        accepted_at: now,
+        ...(body.signatureDataUrl ? { customer_signature_data_url: body.signatureDataUrl, signed_at: now } : {}),
+      });
+      setStatus("success");
+    } catch (err) {
       setStatus("error");
-      setMessage("Failed to record your acceptance. Please try again or contact us.");
-      return;
+      setMessage(err instanceof Error ? err.message : "Failed to record your acceptance. Please try again or contact us.");
+    } finally {
+      setSubmitting(false);
     }
-
-    setQuote({ ...quote, ...payload as Partial<QuoteRow>, accepted_at: now });
-    setStatus("success");
   }
 
   const customerName = quote?.accounts && !Array.isArray(quote.accounts)
