@@ -8,6 +8,8 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Tabs } from "@/components/ui/Tabs";
+import PhotoUpload from "@/components/quotes/PhotoUpload";
+import PhotoGallery, { type ProjectPhoto } from "@/components/quotes/PhotoGallery";
 
 interface QuoteLineItem {
   id: string;
@@ -39,7 +41,18 @@ interface QuoteDetail {
   created_at: string;
   accept_token?: string | null;
   accepted_at?: string | null;
-  account?: { id: string; name: string; email?: string | null } | null;
+  visualization_color_id?: string | null;
+  visualization_image?: string | null;
+  folio_number?: string | null;
+  account?: {
+    id: string;
+    name: string;
+    email?: string | null;
+    billing_address_line1?: string | null;
+    billing_city?: string | null;
+    billing_state?: string | null;
+    billing_zip?: string | null;
+  } | null;
   assigned_to?: { id: string; name: string } | null;
   department?: { id: string; name: string } | null;
   quote_line_items?: QuoteLineItem[];
@@ -63,7 +76,7 @@ const statusVariant: Record<string, "gray" | "orange" | "blue" | "green" | "red"
   EXPIRED: "orange",
 };
 
-type TabKey = "overview" | "notes";
+type TabKey = "overview" | "photos" | "notes";
 
 async function getNextContractNumber(prefix: string): Promise<string> {
   const { data } = await supabase()
@@ -95,18 +108,20 @@ function QuoteDetailContent() {
   const [notes, setNotes] = useState<Array<{ id: string; content: string; author_name?: string; created_at: string }>>([]);
   const [copied, setCopied] = useState(false);
   const [generatingLink, setGeneratingLink] = useState(false);
+  const [photos, setPhotos] = useState<ProjectPhoto[]>([]);
 
   useEffect(() => {
     if (!quoteId) return;
     loadQuote();
     loadNotes();
+    loadPhotos();
   }, [quoteId]);
 
   async function loadQuote() {
     setLoading(true);
     const { data } = await supabase()
       .from("quotes")
-      .select("*, accept_token, accepted_at, account:account_id(id, name, email), assigned_to:assigned_to_id(id, name), department:department_id(id, name), quote_line_items(*)")
+      .select("*, accept_token, accepted_at, visualization_color_id, visualization_image, account:account_id(id, name, email, billing_address_line1, billing_city, billing_state, billing_zip), assigned_to:assigned_to_id(id, name), department:department_id(id, name), quote_line_items(*)")
       .eq("id", quoteId!)
       .single();
     setQuote(data as QuoteDetail | null);
@@ -115,76 +130,122 @@ function QuoteDetailContent() {
 
   async function downloadPdf() {
     if (!quote) return;
-    const { jsPDF } = await import("jspdf");
-    const doc = new jsPDF("p", "mm", "a4");
-    const margin = 20;
-    let y = 20;
+    const { downloadEstimatePdf } = await import("@/lib/estimate-pdf");
+    const acct = quote.account;
 
-    doc.setFontSize(18);
-    doc.setFont("helvetica", "bold");
-    doc.text("ESTIMATE", margin, y);
-    y += 10;
+    // Build property address string from billing fields
+    const propertyAddress = [
+      acct?.billing_address_line1,
+      acct?.billing_city,
+      acct?.billing_state,
+      acct?.billing_zip,
+    ]
+      .filter(Boolean)
+      .join(", ") || acct?.name || "Property Address";
 
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
-    doc.text("Roofing Experts", margin, y); y += 5;
-    doc.text("roofingex.com · info@roofingex.com", margin, y); y += 12;
-
-    doc.setFontSize(9);
-    doc.text(`Estimate: ${quote.name}`, margin, y);
-    doc.text(`Date: ${formatDate(quote.created_at)}`, margin + 70, y);
-    doc.text(`Valid: ${formatDate(quote.valid_until)}`, margin + 140, y);
-    y += 12;
-
-    const acct = quote.account as { name?: string; email?: string | null } | null;
-    doc.setFont("helvetica", "bold");
-    doc.text("Customer", margin, y); y += 5;
-    doc.setFont("helvetica", "normal");
-    doc.text(acct?.name ?? "—", margin, y); y += 5;
-    if (acct?.email) { doc.text(acct.email, margin, y); y += 5; }
-    y += 6;
-
-    // Line items
-    doc.setFont("helvetica", "bold");
-    doc.text("Scope of Work", margin, y); y += 6;
-    doc.setFontSize(8);
-    doc.setFont("helvetica", "normal");
-    doc.text("Item", margin, y);
-    doc.text("Qty", 130, y, { align: "right" });
-    doc.text("Unit", 155, y, { align: "right" });
-    doc.text("Total", 190, y, { align: "right" });
-    y += 4;
-    doc.setDrawColor(80, 80, 80);
-    doc.line(margin, y, 190, y); y += 5;
-
-    for (const item of quote.quote_line_items ?? []) {
-      doc.text(item.product_name, margin, y);
-      doc.text(String(item.quantity), 130, y, { align: "right" });
-      doc.text(formatCurrency(item.unit_price), 155, y, { align: "right" });
-      doc.text(formatCurrency(item.line_total), 190, y, { align: "right" });
-      y += 6;
+    // Prefer stored folio; fall back to live lookup when not saved on the quote
+    let folioNumber: string | undefined = quote.folio_number ?? undefined;
+    if (!folioNumber && acct?.billing_address_line1) {
+      try {
+        const folioRes = await fetch("/api/folio-lookup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            address: acct.billing_address_line1,
+            city: acct.billing_city ?? undefined,
+            zip: acct.billing_zip ?? undefined,
+          }),
+        });
+        if (folioRes.ok) {
+          const folioData = (await folioRes.json()) as { folio?: string | null };
+          folioNumber = folioData.folio ?? undefined;
+        }
+      } catch {
+        // folio lookup failure is non-blocking
+      }
     }
 
-    y += 4;
-    doc.line(margin, y, 190, y); y += 6;
-    const rows: [string, string][] = [
-      ["Subtotal", formatCurrency(quote.subtotal)],
-    ];
-    if ((quote.discount_amount ?? 0) > 0) rows.push(["Discount", `−${formatCurrency(quote.discount_amount)}`]);
-    if ((quote.tax_amount ?? 0) > 0) rows.push([`Tax (${((quote.tax_rate ?? 0) * 100).toFixed(1)}%)`, formatCurrency(quote.tax_amount)]);
-    for (const [label, val] of rows) {
-      doc.text(label, margin, y);
-      doc.text(val, 190, y, { align: "right" });
-      y += 5;
-    }
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text("Total", margin, y);
-    doc.setTextColor(249, 115, 22);
-    doc.text(formatCurrency(quote.total), 190, y, { align: "right" });
-    doc.setTextColor(0, 0, 0);
+    // Fetch company settings for PDF header
+    const { data: companySettings } = await supabase()
+      .from("company_settings")
+      .select("company_name, license_number, address, phone, email")
+      .limit(1)
+      .maybeSingle();
+    const cs = companySettings as {
+      company_name?: string | null;
+      license_number?: string | null;
+      address?: string | null;
+      phone?: string | null;
+      email?: string | null;
+    } | null;
 
-    doc.save(`${quote.name}.pdf`);
+    // Convert line items to PdfSection[]
+    const ROOF_SKU_CODES = ["METAL", "FLAT", "FLAT INSULATIONS", "ALUMINUM", "SHINGLE", "TILE"];
+    const sections = (quote.quote_line_items ?? [])
+      .filter((item) => ROOF_SKU_CODES.some((c) => (item.product_sku ?? "").toUpperCase().startsWith(c)))
+      .map((item) => {
+        const sku = (item.product_sku ?? "").toUpperCase();
+        const isFlat = sku.startsWith("FLAT");
+        const areaMatch = item.product_name.match(/\((\d+)\s*sf\)/i);
+        const areaSqft = areaMatch ? parseInt(areaMatch[1]) : item.quantity;
+        return {
+          sectionType: (isFlat ? "FLAT" : "SLOPED") as "FLAT" | "SLOPED",
+          productCode: sku.split(" ")[0],
+          areaSqft,
+          unitPrice: item.unit_price / Math.max(areaSqft, 1),
+          lineTotal: item.line_total,
+        };
+      });
+
+    if (sections.length === 0 && (quote.quote_line_items ?? []).length > 0) {
+      sections.push({
+        sectionType: "SLOPED",
+        productCode: "METAL",
+        areaSqft: 1,
+        unitPrice: quote.subtotal ?? 0,
+        lineTotal: quote.subtotal ?? 0,
+      });
+    }
+
+    // Visualization: use stored data URL (captured at estimate creation) if available
+    const { findColor } = await import("@/lib/metal-colors");
+    const vizColor = quote.visualization_color_id ? findColor(quote.visualization_color_id) : null;
+
+    // Collect up to 6 BEFORE photos, fetched as base64 data URLs for PDF embedding
+    const beforePhotoUrls: string[] = [];
+    const beforeCandidates = photos.filter((p) => p.stage === "BEFORE").slice(0, 6);
+    for (const ph of beforeCandidates) {
+      try {
+        const res = await fetch(ph.photo_url);
+        const blob = await res.blob();
+        const dataUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(blob);
+        });
+        beforePhotoUrls.push(dataUrl);
+      } catch {
+        // skip photos that fail to load
+      }
+    }
+
+    await downloadEstimatePdf({
+      estimateNumber: quote.name,
+      date: quote.created_at,
+      customerName: acct?.name ?? "Customer",
+      propertyAddress,
+      folioNumber,
+      subtotal: quote.subtotal ?? 0,
+      sections,
+      visualizationImageDataUrl: quote.visualization_image ?? undefined,
+      visualizationColorName: vizColor?.name ?? undefined,
+      beforePhotos: beforePhotoUrls.length > 0 ? beforePhotoUrls : undefined,
+      companyName: cs?.company_name ?? undefined,
+      companyLicenseNumber: cs?.license_number ?? undefined,
+      companyAddress: cs?.address ?? undefined,
+      companyPhone: cs?.phone ?? undefined,
+      companyEmail: cs?.email ?? undefined,
+    });
   }
 
   async function getOrCreateAcceptLink(): Promise<string> {
@@ -217,12 +278,108 @@ function QuoteDetailContent() {
     setNotes((data as Array<{ id: string; content: string; author_name?: string; created_at: string }>) ?? []);
   }
 
+  async function loadPhotos() {
+    const { data } = await supabase()
+      .from("project_photos")
+      .select("*")
+      .eq("quote_id", quoteId!)
+      .order("uploaded_at", { ascending: true });
+    setPhotos((data as ProjectPhoto[]) ?? []);
+  }
+
   async function updateStatus(status: string) {
     setUpdating(true);
     await supabase()
       .from("quotes")
       .update({ status, ...(status === "SENT" ? { sent_at: new Date().toISOString() } : {}), ...(status === "ACCEPTED" ? { accepted_at: new Date().toISOString() } : {}) })
       .eq("id", quoteId!);
+
+    // GHL opportunity sync — fire-and-forget, never blocks UI
+    if (status === "SENT" || status === "ACCEPTED") {
+      (async () => {
+        try {
+          const { data: cfg } = await supabase()
+            .from("company_settings")
+            .select("ghl_pipeline_id, ghl_sent_stage_id, ghl_won_stage_id")
+            .limit(1)
+            .maybeSingle();
+
+          const pipelineId = (cfg as { ghl_pipeline_id?: string } | null)?.ghl_pipeline_id;
+          const sentStageId = (cfg as { ghl_sent_stage_id?: string } | null)?.ghl_sent_stage_id;
+          const wonStageId = (cfg as { ghl_won_stage_id?: string } | null)?.ghl_won_stage_id;
+
+          if (!pipelineId) return; // Not configured — skip silently
+
+          // Get account's GHL contact ID
+          const { data: acctRow } = await supabase()
+            .from("accounts")
+            .select("ghl_contact_id, name, email, phone")
+            .eq("id", (quote?.account as { id: string } | null)?.id ?? "")
+            .maybeSingle();
+
+          const acct = acctRow as { ghl_contact_id?: string | null; name: string; email?: string | null; phone?: string | null } | null;
+          let contactId = acct?.ghl_contact_id ?? null;
+
+          // If no contact synced yet, sync now
+          if (!contactId && acct) {
+            const { syncGhlContact } = await import("@/lib/ghl");
+            contactId = await syncGhlContact({ name: acct.name, email: acct.email, phone: acct.phone });
+          }
+
+          if (!contactId) return;
+
+          const { data: quoteRow } = await supabase()
+            .from("quotes")
+            .select("ghl_opportunity_id, name, total")
+            .eq("id", quoteId!)
+            .maybeSingle();
+
+          const existingOppId = (quoteRow as { ghl_opportunity_id?: string | null } | null)?.ghl_opportunity_id;
+          const quoteName = (quoteRow as { name?: string } | null)?.name ?? "Estimate";
+          const total = (quoteRow as { total?: number | null } | null)?.total ?? 0;
+
+          const { createGhlOpportunity, moveGhlOpportunityStage } = await import("@/lib/ghl");
+
+          if (status === "SENT") {
+            if (existingOppId) {
+              if (sentStageId) await moveGhlOpportunityStage(existingOppId, sentStageId);
+            } else {
+              const oppId = await createGhlOpportunity({
+                contactId,
+                title: quoteName,
+                pipelineId,
+                stageId: sentStageId ?? "",
+                monetaryValue: total,
+              });
+              if (oppId) {
+                await supabase()
+                  .from("quotes")
+                  .update({ ghl_opportunity_id: oppId, ghl_last_sync_at: new Date().toISOString() })
+                  .eq("id", quoteId!);
+              }
+            }
+          } else if (status === "ACCEPTED" && wonStageId) {
+            const oppId = existingOppId ?? await createGhlOpportunity({
+              contactId,
+              title: quoteName,
+              pipelineId,
+              stageId: wonStageId,
+              monetaryValue: total,
+            });
+            if (oppId) {
+              await moveGhlOpportunityStage(oppId, wonStageId);
+              await supabase()
+                .from("quotes")
+                .update({ ghl_opportunity_id: oppId, ghl_last_sync_at: new Date().toISOString() })
+                .eq("id", quoteId!);
+            }
+          }
+        } catch {
+          // GHL sync failure never surfaces to user
+        }
+      })();
+    }
+
     await loadQuote();
     setUpdating(false);
   }
@@ -369,6 +526,7 @@ function QuoteDetailContent() {
 
   const tabList: Array<{ key: TabKey; label: string }> = [
     { key: "overview", label: "Overview" },
+    { key: "photos", label: `Photos${photos.length > 0 ? ` (${photos.length})` : ""}` },
     { key: "notes", label: "Notes" },
   ];
 
@@ -499,6 +657,16 @@ function QuoteDetailContent() {
                 <p className="text-sm font-bold text-brand mt-1">{formatCurrency(quote.monthly_payment)}/month</p>
               </div>
             )}
+          </div>
+        )}
+
+        {activeTab === "photos" && (
+          <div className="p-6 space-y-5">
+            <PhotoUpload quoteId={quoteId!} onUploaded={loadPhotos} />
+            <PhotoGallery
+              photos={photos}
+              onDelete={(id) => setPhotos((prev) => prev.filter((p) => p.id !== id))}
+            />
           </div>
         )}
 
