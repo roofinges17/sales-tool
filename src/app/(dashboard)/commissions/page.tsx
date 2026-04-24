@@ -9,6 +9,7 @@ import { Table } from "@/components/ui/Table";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Modal } from "@/components/ui/Modal";
+import { toast } from "sonner";
 import type { Column } from "@/components/ui/Table";
 
 interface CommissionEntry {
@@ -79,10 +80,11 @@ export default function CommissionsPage() {
 
   async function loadEntries() {
     setLoading(true);
-    const { data } = await supabase()
+    const { data, error } = await supabase()
       .from("commission_entries")
       .select("*, recipient:recipient_id(id, name), sale:sale_id(id, name, contract_number, contract_value, status, account:account_id(name), department:department_id(name))")
       .order("created_at", { ascending: false });
+    if (error) toast.error("Failed to load commissions: " + error.message);
     setEntries((data as CommissionEntry[]) ?? []);
     setLoading(false);
   }

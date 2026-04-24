@@ -41,7 +41,8 @@ export default function LeadSourcesPage() {
 
   async function load() {
     setLoading(true);
-    const { data } = await supabase().from("lead_sources").select("*").order("name");
+    const { data, error } = await supabase().from("lead_sources").select("*").order("name");
+    if (error) toast.error("Failed to load lead sources: " + error.message);
     setSources((data as LeadSource[]) ?? []);
     setLoading(false);
   }

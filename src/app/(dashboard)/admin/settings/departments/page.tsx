@@ -45,7 +45,8 @@ export default function DepartmentsPage() {
 
   async function load() {
     setLoading(true);
-    const { data } = await supabase().from("departments").select("*").order("name");
+    const { data, error } = await supabase().from("departments").select("*").order("name");
+    if (error) toast.error("Failed to load departments: " + error.message);
     setDepartments((data as Department[]) ?? []);
     setLoading(false);
   }

@@ -60,11 +60,12 @@ export default function AdminSettingsPage() {
 
   async function loadSettings() {
     setLoading(true);
-    const { data } = await supabase()
+    const { data, error } = await supabase()
       .from("company_settings")
       .select("*")
       .limit(1)
       .maybeSingle();
+    if (error) toast.error("Failed to load settings: " + error.message);
     if (data) setSettings(data);
     setLoading(false);
   }

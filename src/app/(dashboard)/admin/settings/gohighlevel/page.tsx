@@ -29,11 +29,12 @@ export default function GoHighLevelPage() {
   }, []);
 
   async function loadSettings() {
-    const { data } = await supabase()
+    const { data, error } = await supabase()
       .from("company_settings")
       .select("ghl_default_location_id")
       .limit(1)
       .maybeSingle();
+    if (error) console.error("[GHL settings] load failed:", error.message);
     const row = data as { ghl_default_location_id?: string | null } | null;
     if (row?.ghl_default_location_id) setActiveLocationId(row.ghl_default_location_id);
   }

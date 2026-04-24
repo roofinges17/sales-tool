@@ -282,7 +282,8 @@ export function AccountDetailClient({ id }: { id: string }) {
     setSavingContact(false);
     setContactModalOpen(false);
     setContactForm(initialContact);
-    const { data } = await supabase().from("contacts").select("*").eq("account_id", id).order("is_primary", { ascending: false });
+    const { data, error: cErr } = await supabase().from("contacts").select("*").eq("account_id", id).order("is_primary", { ascending: false });
+    if (cErr) toast.error("Failed to reload contacts: " + cErr.message);
     setContacts((data as Contact[]) ?? []);
   }
 
@@ -306,7 +307,8 @@ export function AccountDetailClient({ id }: { id: string }) {
     setSavingProperty(false);
     setPropertyModalOpen(false);
     setPropertyForm(initialProperty);
-    const { data } = await supabase().from("properties").select("*").eq("account_id", id).order("is_primary", { ascending: false });
+    const { data, error: pErr } = await supabase().from("properties").select("*").eq("account_id", id).order("is_primary", { ascending: false });
+    if (pErr) toast.error("Failed to reload properties: " + pErr.message);
     setProperties((data as Property[]) ?? []);
   }
 

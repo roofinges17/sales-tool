@@ -48,7 +48,8 @@ export default function FinancingPage() {
 
   async function load() {
     setLoading(true);
-    const { data } = await supabase().from("financing_plans").select("*").order("provider_name");
+    const { data, error } = await supabase().from("financing_plans").select("*").order("provider_name");
+    if (error) toast.error("Failed to load financing plans: " + error.message);
     setPlans((data as FinancingPlan[]) ?? []);
     setLoading(false);
   }

@@ -9,6 +9,7 @@ import { Tabs } from "@/components/ui/Tabs";
 import { Table } from "@/components/ui/Table";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { toast } from "sonner";
 import type { Account } from "@/types";
 import type { Column } from "@/components/ui/Table";
 
@@ -56,10 +57,11 @@ export default function AccountsPage() {
 
   async function loadAccounts() {
     setLoading(true);
-    const { data } = await supabase()
+    const { data, error } = await supabase()
       .from("accounts")
       .select("*, assigned_to:assigned_to_id(id, name, email)")
       .order("created_at", { ascending: false });
+    if (error) toast.error("Failed to load accounts: " + error.message);
     setAccounts((data as Account[]) ?? []);
     setLoading(false);
   }

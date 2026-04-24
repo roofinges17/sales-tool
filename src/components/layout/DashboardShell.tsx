@@ -18,11 +18,12 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         window.location.href = "/login/";
         return;
       }
-      const { data } = await supabase()
+      const { data, error } = await supabase()
         .from("profiles")
         .select("*")
         .eq("id", user.id)
         .single();
+      if (error && error.code !== "PGRST116") console.error("[DashboardShell] profile load failed:", error.message);
       if (mounted) {
         setProfile(data as Profile | null);
         setLoading(false);
