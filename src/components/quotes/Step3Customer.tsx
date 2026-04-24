@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { useQuoteBuilder } from "@/lib/contexts/QuoteBuilderContext";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { PlacesAutocompleteInput, type PlaceResult } from "@/components/ui/PlacesAutocompleteInput";
 
 interface AccountResult {
   id: string;
@@ -16,10 +17,46 @@ interface AccountResult {
 }
 
 export default function Step3Customer() {
-  const { state, setExistingAccount, setIsNewCustomer, setNewCustomer, setStep } = useQuoteBuilder();
+  const { state, setExistingAccount, setIsNewCustomer, setNewCustomer, setStep, setFolioNumber } = useQuoteBuilder();
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<AccountResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [folioLooking, setFolioLooking] = useState(false);
+
+  async function lookupFolioFromAddress(address: string, city: string, zip: string) {
+    setFolioLooking(true);
+    try {
+      const res = await fetch("/api/folio-lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address, city, zip }),
+      });
+      if (res.ok) {
+        const d = (await res.json()) as { folio?: string | null };
+        if (d?.folio) setFolioNumber(d.folio);
+      }
+    } catch {
+      // non-blocking
+    }
+    setFolioLooking(false);
+  }
+
+  function handleAddressPlaceSelect(place: PlaceResult) {
+    const addr = place.formattedAddress;
+    const parts = addr.split(",").map((s) => s.trim());
+    const street = parts[0] ?? addr;
+    const city = parts[1] ?? "";
+    const stateZip = (parts[2] ?? "").trim().split(" ");
+    const stateCode = stateZip[0] ?? "";
+    const zip = (stateZip[1] ?? "").replace(/\D/g, "").slice(0, 5);
+    setNewCustomer({
+      billing_address_line1: street,
+      billing_city: city,
+      billing_state: stateCode,
+      billing_zip: zip,
+    });
+    lookupFolioFromAddress(street, city, zip);
+  }
 
   async function handleSearch(q: string) {
     setSearchQuery(q);
@@ -137,10 +174,13 @@ export default function Step3Customer() {
             <p className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3">Property Address</p>
             <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2">
-                <Input
-                  label="Street Address"
+                <label className="block text-sm font-medium text-zinc-300 mb-1.5">Street Address</label>
+                <PlacesAutocompleteInput
                   value={state.newCustomer.billing_address_line1}
-                  onChange={(e) => setNewCustomer({ billing_address_line1: e.target.value })}
+                  onChange={(v) => setNewCustomer({ billing_address_line1: v })}
+                  onSelect={handleAddressPlaceSelect}
+                  placeholder="123 Main St…"
+                  className="w-full h-10 rounded-xl border border-zinc-700 bg-zinc-950/80 text-sm text-zinc-100 transition focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/30 overflow-hidden"
                 />
               </div>
               <Input
@@ -160,18 +200,57 @@ export default function Step3Customer() {
               />
             </div>
           </div>
+          <div>
+            <p className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3">Folio Number</p>
+            <div className="flex items-center gap-2">
+              <Input
+                label=""
+                placeholder={folioLooking ? "Looking up…" : "Auto-filled from address or enter manually"}
+                value={state.folioNumber}
+                onChange={(e) => setFolioNumber(e.target.value)}
+              />
+              {!state.folioNumber && !folioLooking && state.newCustomer.billing_address_line1 && (
+                <button
+                  type="button"
+                  onClick={() => lookupFolioFromAddress(
+                    state.newCustomer.billing_address_line1,
+                    state.newCustomer.billing_city,
+                    state.newCustomer.billing_zip,
+                  )}
+                  className="shrink-0 text-xs text-brand hover:underline"
+                >
+                  Lookup
+                </button>
+              )}
+              {folioLooking && (
+                <svg className="h-4 w-4 animate-spin text-zinc-400 shrink-0" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
-      <div className="flex gap-3">
-        <Button variant="secondary" onClick={() => setStep(2)}>Back</Button>
-        <Button
-          className="flex-1"
-          disabled={!canProceed}
-          onClick={() => setStep(4)}
-        >
-          Next: Review
-        </Button>
+      <div className="space-y-2">
+        <div className="flex gap-3">
+          <Button variant="secondary" onClick={() => setStep(2)}>Back</Button>
+          <Button
+            className="flex-1"
+            disabled={!canProceed}
+            onClick={() => setStep(4)}
+          >
+            Next: Review
+          </Button>
+        </div>
+        {!canProceed && (
+          <p className="text-center text-sm text-zinc-500">
+            {state.isNewCustomer
+              ? "Enter the customer's name to continue."
+              : "Search and select an existing customer to continue."}
+          </p>
+        )}
       </div>
     </div>
   );
