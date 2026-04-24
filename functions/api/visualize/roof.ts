@@ -11,7 +11,7 @@
 import { createClient } from "@supabase/supabase-js";
 
 const CORS = { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" };
-const MODEL_ID = "gemini-2.5-flash-image-preview";
+const MODEL_ID = "gemini-2.5-flash-image";
 
 interface Env {
   SUPABASE_URL?: string;
