@@ -1,0 +1,207 @@
+// POST /api/vision/material-detect
+// Analyzes exterior house photos for soffit, fascia, gutter condition, color, and linear footage.
+// Uses GPT-4o vision. Falls back to mock when OPENAI_API_KEY is not set.
+//
+// Input:  { photos: Array<{ base64: string; mediaType: string }>, material_type?: "soffit" | "fascia" | "gutter" | "all" }
+// Output: { items: MaterialItem[], totalLinearFt: number, model: string, mock?: true }
+
+export interface Env {
+  OPENAI_API_KEY?: string;
+}
+
+export interface MaterialItem {
+  material_type: "soffit" | "fascia" | "gutter";
+  linear_feet: number;
+  damage_severity: "none" | "minor" | "moderate" | "severe";
+  color_hex: string;           // dominant color as #RRGGBB
+  recommended_action: string;
+  suggested_sku: string | null;
+  notes: string;
+  confidence: "low" | "medium" | "high";
+}
+
+interface DetectResponse {
+  items: MaterialItem[];
+  totalLinearFt: number;
+  model: string;
+  mock?: boolean;
+}
+
+const SYSTEM_PROMPT = `You are a professional roofing contractor and materials estimator. Analyze exterior house photos to assess soffit, fascia, and gutter condition, color, and linear footage.
+
+For each visible component, return:
+- material_type: "soffit" | "fascia" | "gutter"
+- linear_feet: estimated linear footage (single-story home perimeter ~120–160 lf typical)
+- damage_severity: "none" | "minor" | "moderate" | "severe"
+- color_hex: dominant color as #RRGGBB (e.g. "#F5F5DC" for beige, "#FFFFFF" for white)
+- recommended_action: concise repair/replace recommendation
+- suggested_sku: one of "SOFFIT & FASCIA" | "METAL FASCIA" | "GUTTERS" | null
+- notes: brief observation (material, condition, visible damage)
+- confidence: "low" | "medium" | "high"
+
+Respond ONLY with valid JSON, no prose:
+{
+  "items": [MaterialItem, ...],
+  "totalLinearFt": number
+}
+
+Guidelines:
+- Only include components that are clearly visible in the photos
+- For color_hex, identify the most dominant color of each material
+- Estimate linear footage from visible roofline; a typical single-story is 120–160 lf perimeter
+- If a component appears undamaged, damage_severity should be "none"
+- suggested_sku maps to the product catalog: soffit damage → "SOFFIT & FASCIA", metal fascia → "METAL FASCIA", gutters → "GUTTERS"`;
+
+const USER_PROMPT = `Analyze the exterior photo(s) of this house. Identify and estimate the soffit, fascia, and gutter components: their linear footage, current color, damage severity, and recommended action. Use what is visible — do not guess about areas not shown.`;
+
+// ── Mock response ─────────────────────────────────────────────────────────────
+
+const MOCK_RESPONSE: DetectResponse = {
+  mock: true,
+  model: "gpt-4o (mock)",
+  totalLinearFt: 148,
+  items: [
+    {
+      material_type: "soffit",
+      linear_feet: 148,
+      damage_severity: "minor",
+      color_hex: "#F5F5DC",
+      recommended_action: "Clean and repaint; replace 2–3 damaged panels on east elevation",
+      suggested_sku: "SOFFIT & FASCIA",
+      notes: "Vinyl soffit, beige/cream. Minor cracking and one visibly sagging panel on east eave.",
+      confidence: "medium",
+    },
+    {
+      material_type: "fascia",
+      linear_feet: 148,
+      damage_severity: "moderate",
+      color_hex: "#FFFFFF",
+      recommended_action: "Replace wood fascia with aluminum wrap; significant weathering on west face",
+      suggested_sku: "METAL FASCIA",
+      notes: "Painted wood fascia, white. Peeling paint and wood rot visible at west corner.",
+      confidence: "medium",
+    },
+    {
+      material_type: "gutter",
+      linear_feet: 80,
+      damage_severity: "minor",
+      color_hex: "#D3D3D3",
+      recommended_action: "Clean gutters and resecure two loose hangers; rear not visible in photo",
+      suggested_sku: "GUTTERS",
+      notes: "Aluminum K-style gutters, light gray. Debris visible in front section; rear elevation not photographed.",
+      confidence: "low",
+    },
+  ],
+};
+
+// ── Main handler ──────────────────────────────────────────────────────────────
+
+export const onRequestPost: PagesFunction<Env> = async (ctx) => {
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": "*",
+    "Content-Type": "application/json",
+  };
+
+  let body: { photos?: Array<{ base64: string; mediaType: string }>; material_type?: string };
+  try {
+    body = (await ctx.request.json()) as typeof body;
+  } catch {
+    return new Response(JSON.stringify({ error: "Invalid JSON" }), { status: 400, headers: corsHeaders });
+  }
+
+  const photos = body.photos ?? [];
+  if (photos.length === 0) {
+    return new Response(JSON.stringify({ error: "At least one photo is required" }), {
+      status: 400,
+      headers: corsHeaders,
+    });
+  }
+
+  const apiKey = ctx.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return new Response(JSON.stringify(MOCK_RESPONSE), { status: 200, headers: corsHeaders });
+  }
+
+  const materialHint = body.material_type
+    ? `\n\nFocus especially on: ${body.material_type}. Still report any other visible components.`
+    : "";
+
+  const imageContent = photos.slice(0, 4).map((photo) => ({
+    type: "image_url",
+    image_url: {
+      url: `data:${photo.mediaType};base64,${photo.base64}`,
+      detail: "high",
+    },
+  }));
+
+  const openaiBody = {
+    model: "gpt-4o",
+    max_tokens: 1024,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: [
+          ...imageContent,
+          { type: "text", text: USER_PROMPT + materialHint },
+        ],
+      },
+    ],
+  };
+
+  try {
+    const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(openaiBody),
+    });
+
+    if (!openaiRes.ok) {
+      const errText = await openaiRes.text();
+      console.error("[material-detect] OpenAI error:", openaiRes.status, errText);
+      return new Response(
+        JSON.stringify({ error: `OpenAI API error ${openaiRes.status}` }),
+        { status: 502, headers: corsHeaders },
+      );
+    }
+
+    const completion = (await openaiRes.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+      model?: string;
+    };
+
+    const content = completion?.choices?.[0]?.message?.content ?? "{}";
+    const parsed = JSON.parse(content) as {
+      items?: MaterialItem[];
+      totalLinearFt?: number;
+    };
+
+    const result: DetectResponse = {
+      items: parsed.items ?? [],
+      totalLinearFt: parsed.totalLinearFt ?? 0,
+      model: completion.model ?? "gpt-4o",
+    };
+
+    return new Response(JSON.stringify(result), { status: 200, headers: corsHeaders });
+  } catch (err) {
+    console.error("[material-detect] fetch error:", err);
+    return new Response(JSON.stringify({ error: "Failed to analyze image" }), {
+      status: 500,
+      headers: corsHeaders,
+    });
+  }
+};
+
+export const onRequestOptions: PagesFunction<Env> = async () => {
+  return new Response(null, {
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    },
+  });
+};

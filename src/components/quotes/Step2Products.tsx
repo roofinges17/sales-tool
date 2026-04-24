@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { RoofMeasure, type RoofData } from "@/components/RoofMeasure";
 import DamageAnalysis, { type DamageItem } from "@/components/quotes/DamageAnalysis";
+import MaterialAnalysis, { type MaterialItem } from "@/components/quotes/MaterialAnalysis";
 import type { CartItem } from "@/lib/contexts/QuoteBuilderContext";
 
 interface Product {
@@ -284,6 +285,28 @@ export default function Step2Products() {
                   default_price: product.default_price ?? product.price,
                   product_type: product.product_type,
                   unit: product.unit ?? damageItem.unit,
+                  is_manual_qty: true,
+                } satisfies Omit<CartItem, "line_total">);
+              }
+            }}
+          />
+          <MaterialAnalysis
+            products={products}
+            onAddToCart={(materialItems) => {
+              for (const { product, quantity, materialItem } of materialItems) {
+                const unitPrice = product.default_price ?? product.price ?? 0;
+                addToCart({
+                  product_id: product.id,
+                  product_name: `${product.name} (${materialItem.linear_feet} lf)`,
+                  product_sku: product.code,
+                  quantity,
+                  unit_price: unitPrice,
+                  unit_cost: product.cost,
+                  min_price: product.min_price,
+                  max_price: product.max_price,
+                  default_price: product.default_price ?? product.price,
+                  product_type: product.product_type,
+                  unit: "lf",
                   is_manual_qty: true,
                 } satisfies Omit<CartItem, "line_total">);
               }
