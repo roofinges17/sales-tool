@@ -42,6 +42,8 @@ interface QuoteDetail {
   created_at: string;
   accept_token?: string | null;
   accepted_at?: string | null;
+  signed_at?: string | null;
+  customer_signature_data_url?: string | null;
   visualization_color_id?: string | null;
   visualization_image?: string | null;
   folio_number?: string | null;
@@ -124,7 +126,7 @@ function QuoteDetailContent() {
     setLoading(true);
     const { data } = await supabase()
       .from("quotes")
-      .select("*, accept_token, accepted_at, visualization_color_id, visualization_image, account:account_id(id, name, email, billing_address_line1, billing_city, billing_state, billing_zip), assigned_to:assigned_to_id(id, name), department:department_id(id, name), quote_line_items(*)")
+      .select("*, accept_token, accepted_at, signed_at, customer_signature_data_url, visualization_color_id, visualization_image, account:account_id(id, name, email, billing_address_line1, billing_city, billing_state, billing_zip), assigned_to:assigned_to_id(id, name), department:department_id(id, name), quote_line_items(*)")
       .eq("id", quoteId!)
       .single();
     setQuote(data as QuoteDetail | null);
@@ -669,6 +671,29 @@ function QuoteDetailContent() {
                 <p className="text-sm font-semibold text-brand mb-1">Financing</p>
                 <p className="text-sm text-zinc-300">{quote.financing_provider} · {quote.financing_term} months · {quote.financing_rate}% APR</p>
                 <p className="text-sm font-bold text-brand mt-1">{formatCurrency(quote.monthly_payment)}/month</p>
+              </div>
+            )}
+
+            {/* Electronic signature */}
+            {quote.customer_signature_data_url && (
+              <div className="rounded-xl border border-emerald-800/30 bg-emerald-950/10 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <svg className="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p className="text-sm font-semibold text-emerald-300">Signed Electronically</p>
+                  {quote.signed_at && (
+                    <span className="text-xs text-zinc-500">{new Date(quote.signed_at).toLocaleString()}</span>
+                  )}
+                </div>
+                <div className="rounded-lg bg-zinc-900 p-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={quote.customer_signature_data_url}
+                    alt="Customer signature"
+                    className="mx-auto max-h-24 object-contain"
+                  />
+                </div>
               </div>
             )}
           </div>
