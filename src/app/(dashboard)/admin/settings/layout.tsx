@@ -26,7 +26,11 @@ const NAV_GROUPS_FULL = [
   {
     label: "Integrations",
     items: [
-      { href: "/admin/settings/quickbooks/", label: "QuickBooks", icon: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15v-4H7l5-8v4h4l-5 8z" },
+      { href: "/admin/settings/quickbooks/",   label: "QuickBooks",      icon: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15v-4H7l5-8v4h4l-5 8z" },
+      { href: "/admin/settings/gohighlevel/",  label: "GoHighLevel",     icon: "M13 10V3L4 14h7v7l9-11h-7z" },
+      { href: "/admin/settings/google-maps/",  label: "Google Maps",     icon: "M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z M15 11a3 3 0 11-6 0 3 3 0 016 0z" },
+      { href: "/admin/settings/openai/",       label: "OpenAI Vision",   icon: "M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.347.347a3.75 3.75 0 00-.864 3.5A2.75 2.75 0 0112 21.75a2.75 2.75 0 01-2.743-2.563 3.75 3.75 0 00-.864-3.5l-.347-.347z" },
+      { href: "/admin/settings/resend/",       label: "Resend Email",    icon: "M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" },
     ],
   },
 ];
