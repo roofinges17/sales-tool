@@ -374,7 +374,7 @@ export default function Step2Products() {
                   onChange={(v) => { setAddress(v); setGeoError(""); }}
                   onSelect={handlePlaceSelect}
                   placeholder="Enter property address..."
-                  className="flex-1 h-9 rounded-md border bg-surface-2 text-body text-text-primary border-border hover:border-border-strong focus-within:border-accent focus-within:ring-1 focus-within:ring-accent transition-colors overflow-hidden"
+                  className="flex-1"
                 />
                 <button
                   onClick={handleMeasure}

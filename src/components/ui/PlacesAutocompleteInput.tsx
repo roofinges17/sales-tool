@@ -5,7 +5,6 @@ import { useEffect, useRef } from "react";
 const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_STATIC_KEY ?? "";
 
 // window-level singleton — survives across Next.js code-split chunks.
-// Module-level vars are NOT shared between chunks; window IS.
 declare global {
   interface Window {
     __roofingPlacesLib?: Promise<google.maps.PlacesLibrary>;
@@ -14,8 +13,6 @@ declare global {
 
 function getPlacesLib(): Promise<google.maps.PlacesLibrary> {
   if (window.__roofingPlacesLib) return window.__roofingPlacesLib;
-  // Assigned synchronously before first await — concurrent calls in same tick
-  // get the same promise instead of bootstrapping the API twice.
   window.__roofingPlacesLib = import("@googlemaps/js-api-loader").then(
     ({ setOptions, importLibrary }) => {
       setOptions({ key: MAPS_KEY, v: "weekly" });
@@ -41,6 +38,23 @@ interface PlacesAutocompleteInputProps {
   autoFocus?: boolean;
 }
 
+// Searches the element's shadow DOM (and one level of nested shadow roots) for
+// the internal <input>. Google nests it inside a sub-element on some builds.
+function findShadowInput(el: Element): HTMLInputElement | null {
+  // Direct match
+  const direct = el.shadowRoot?.querySelector<HTMLInputElement>("input");
+  if (direct) return direct;
+  // One level deeper — e.g. <gmp-internal-input> inside the shadow root
+  const nestedHosts = el.shadowRoot?.querySelectorAll("*") ?? [];
+  for (const host of nestedHosts) {
+    if (host.shadowRoot) {
+      const nested = host.shadowRoot.querySelector<HTMLInputElement>("input");
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
 export function PlacesAutocompleteInput({
   value,
   onChange,
@@ -54,13 +68,11 @@ export function PlacesAutocompleteInput({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const elementRef = useRef<any>(null);
 
-  // Stable callback refs — always current when any event fires.
   const onChangeRef = useRef(onChange);
   const onSelectRef = useRef(onSelect);
   onChangeRef.current = onChange;
   onSelectRef.current = onSelect;
 
-  // Mount PlaceAutocompleteElement once.
   useEffect(() => {
     if (!MAPS_KEY || !containerRef.current) return;
     let cancelled = false;
@@ -71,8 +83,8 @@ export function PlacesAutocompleteInput({
       if (cancelled || !containerRef.current || elementRef.current) return;
       if (!lib.PlaceAutocompleteElement) {
         console.error(
-          "[PlacesAutocomplete] PlaceAutocompleteElement not available. " +
-          "Ensure 'Maps JavaScript API' is enabled in Google Cloud Console for this key.",
+          "[PlacesAutocomplete] PlaceAutocompleteElement not available — " +
+          "ensure Maps JavaScript API is enabled in GCP for this key.",
         );
         return;
       }
@@ -86,48 +98,42 @@ export function PlacesAutocompleteInput({
       elementRef.current = pac;
       containerRef.current.appendChild(pac);
 
-      // Prefer listening on the outer pac element — native `input` events from
-      // the inner shadow <input> are composed and bubble through the shadow
-      // boundary, so no shadow-DOM reach-in is needed for keystroke forwarding.
+      // Native input events from the shadow <input> are composed and bubble
+      // through the shadow boundary — listen on the outer element for keystrokes.
       pac.addEventListener("input", (e: Event) => {
         onChangeRef.current((e.target as HTMLInputElement).value);
       });
 
-      // Set placeholder and autoFocus via shadow-DOM input (no supported public
-      // API for these on PlaceAutocompleteElement). Use MutationObserver so we
-      // don't depend on a fixed number of animation frames for shadow render.
+      // Placeholder + autoFocus require the internal shadow input.
+      // Use MutationObserver to wait for it; fall back to rAF.
       const wireShadowInput = () => {
-        const inner = pac.shadowRoot?.querySelector("input") as HTMLInputElement | null;
+        const inner = findShadowInput(pac);
         if (inner) {
           inner.placeholder = placeholder;
           if (autoFocus) inner.focus();
         } else {
+          // Try focusing the outer element as a best-effort autoFocus fallback.
+          if (autoFocus) {
+            try { pac.focus(); } catch (_) { /* noop */ }
+          }
           console.error(
-            "[PlacesAutocomplete] Shadow input not found — placeholder/autofocus unavailable. " +
-            "Google may have changed PlaceAutocompleteElement internals.",
+            "[PlacesAutocomplete] Shadow input not found — placeholder unavailable. " +
+            "Google may have restructured PlaceAutocompleteElement internals.",
           );
         }
       };
 
-      // Try immediately (shadow may already be rendered), then observe for it.
-      if (pac.shadowRoot?.querySelector("input")) {
+      if (findShadowInput(pac)) {
         wireShadowInput();
       } else {
         const mo = new MutationObserver(() => {
-          if (pac.shadowRoot?.querySelector("input")) {
-            mo.disconnect();
-            wireShadowInput();
-          }
+          if (findShadowInput(pac)) { mo.disconnect(); wireShadowInput(); }
         });
         mo.observe(pac, { childList: true, subtree: true });
-        // Belt-and-suspenders: also try after one frame in case shadow root
-        // renders synchronously but MutationObserver fires asynchronously.
-        requestAnimationFrame(() => {
-          if (!cancelled) wireShadowInput();
-        });
+        requestAnimationFrame(() => { if (!cancelled) wireShadowInput(); });
       }
 
-      // Fired when user selects a suggestion from the dropdown.
+      // Place selected — fetch full fields and fire onSelect.
       pac.addEventListener("gmp-placeautocomplete-placechange", async () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const place = pac.value as any;
@@ -152,25 +158,20 @@ export function PlacesAutocompleteInput({
         elementRef.current = null;
       }
     };
-  // Stable effect — deps that don't change after mount.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sync external value resets (e.g. parent clears the field after selection).
+  // Sync external value resets to shadow input.
   useEffect(() => {
     if (!elementRef.current) return;
-    const inner = elementRef.current.shadowRoot?.querySelector("input") as HTMLInputElement | null;
+    const inner = findShadowInput(elementRef.current);
     if (inner && inner.value !== value) inner.value = value;
   }, [value]);
 
-  // Callers pass className that previously styled a plain <input>.
-  // Now it styles the outer container div — border, bg, rounded, sizing.
-  // Inner text color / font are driven by --gmpx-* CSS custom properties below,
-  // which IS Google's documented styling surface for PlaceAutocompleteElement.
-  const defaultClass =
-    "flex-1 h-10 rounded-lg border border-border bg-surface-2 text-sm text-text-primary " +
-    "hover:border-border-strong focus-within:border-accent focus-within:ring-1 focus-within:ring-accent " +
-    "transition-colors overflow-hidden";
+  // Container is sized only (flex/width). PlaceAutocompleteElement owns all
+  // visual chrome (input box border, bg, dropdown) via --gmpx-* custom props.
+  // No border/bg/overflow on the container — those were for the old plain input.
+  const defaultClass = "flex-1 relative";
 
   if (!MAPS_KEY) {
     return (
@@ -178,7 +179,10 @@ export function PlacesAutocompleteInput({
         type="text"
         disabled
         placeholder="Maps API key not configured"
-        className={className ?? defaultClass}
+        className={
+          className ??
+          "flex-1 h-10 rounded-lg border border-border bg-surface-2 px-4 text-sm text-text-primary"
+        }
       />
     );
   }
@@ -189,18 +193,18 @@ export function PlacesAutocompleteInput({
       className={className ?? defaultClass}
       style={
         {
-          // Google's documented styling surface for PlaceAutocompleteElement.
-          // transparent surface/outline means the outer container div is the visual box.
-          "--gmpx-color-surface": "transparent",
-          "--gmpx-color-on-surface": "var(--text-primary, #f4f4f5)",
-          "--gmpx-color-on-surface-variant": "var(--text-muted, #71717a)",
-          "--gmpx-color-outline": "transparent",
-          "--gmpx-color-primary": "var(--accent, #818cf8)",
+          // --gmpx-* are Google's documented theming surface for PlaceAutocompleteElement.
+          // Real colors (not transparent) so the dropdown is visible on dark backgrounds.
+          "--gmpx-color-surface": "#18181b",               // zinc-900 — input bg
+          "--gmpx-color-on-surface": "#f4f4f5",            // zinc-100 — input text
+          "--gmpx-color-on-surface-variant": "#a1a1aa",    // zinc-400 — placeholder
+          "--gmpx-color-outline": "#3f3f46",               // zinc-700 — input border
+          "--gmpx-color-primary": "#818cf8",               // indigo-400 — focus/accent
+          "--gmpx-color-surface-container": "#27272a",     // zinc-800 — dropdown bg
+          "--gmpx-color-surface-container-low": "#1c1c1f", // darker — dropdown row hover
+          "--gmpx-color-surface-container-high": "#3f3f46",// zinc-700 — selected row
           "--gmpx-font-family-base": "var(--font-body, sans-serif)",
           "--gmpx-font-size-base": "0.875rem",
-          "--gmpx-color-surface-container-low": "transparent",
-          // Dropdown background — use surface-2 so it matches the app dark theme.
-          "--gmpx-color-surface-container": "var(--surface-2, #27272a)",
         } as React.CSSProperties
       }
     />

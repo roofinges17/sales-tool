@@ -180,7 +180,7 @@ export default function Step3Customer() {
                   onChange={(v) => setNewCustomer({ billing_address_line1: v })}
                   onSelect={handleAddressPlaceSelect}
                   placeholder="123 Main St…"
-                  className="w-full h-10 rounded-xl border border-zinc-700 bg-zinc-950/80 text-sm text-zinc-100 transition focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/30 overflow-hidden"
+                  className="w-full"
                 />
               </div>
               <Input
