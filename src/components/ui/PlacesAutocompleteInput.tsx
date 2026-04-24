@@ -133,21 +133,49 @@ export function PlacesAutocompleteInput({
         requestAnimationFrame(() => { if (!cancelled) wireShadowInput(); });
       }
 
-      // Place selected — fetch full fields and fire onSelect.
+      // Place selected — current Google API fires 'gmp-select' with a
+      // placePrediction object. Also listen to 'gmp-placeselect' and the
+      // legacy 'gmp-placeautocomplete-placechange' to cover API version drift.
+      // Console.log on each so the first real-browser test reveals which fires.
+      const handleSelection = async (placePrediction: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+        if (!placePrediction) {
+          console.warn("[PlacesAutocomplete] handleSelection called with no placePrediction");
+          return;
+        }
+        const place = placePrediction.toPlace ? placePrediction.toPlace() : placePrediction;
+        await place.fetchFields({ fields: ["location", "formattedAddress"] });
+        const lat: number = place.location.lat();
+        const lng: number = place.location.lng();
+        const formattedAddress: string = place.formattedAddress ?? "";
+        console.log("[PlacesAutocomplete] onSelect fired:", formattedAddress);
+        onChangeRef.current(formattedAddress);
+        onSelectRef.current({ lat, lng, formattedAddress });
+      };
+
+      // Primary event (current API, 2024+)
+      pac.addEventListener("gmp-select", async (e: Event) => {
+        console.log("[PlacesAutocomplete] gmp-select fired");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await handleSelection((e as any).placePrediction);
+      });
+
+      // Alternate name used in some API versions
+      pac.addEventListener("gmp-placeselect", async (e: Event) => {
+        console.log("[PlacesAutocomplete] gmp-placeselect fired");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await handleSelection((e as any).placePrediction);
+      });
+
+      // Legacy event name — kept as belt-and-suspenders
       pac.addEventListener("gmp-placeautocomplete-placechange", async () => {
+        console.log("[PlacesAutocomplete] gmp-placeautocomplete-placechange fired");
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const place = pac.value as any;
-        if (!place) return;
-        try {
-          await place.fetchFields({ fields: ["location", "formattedAddress"] });
-          const lat: number = place.location.lat();
-          const lng: number = place.location.lng();
-          const formattedAddress: string = place.formattedAddress ?? "";
-          onChangeRef.current(formattedAddress);
-          onSelectRef.current({ lat, lng, formattedAddress });
-        } catch (err) {
-          console.error("[PlacesAutocomplete] fetchFields error:", err);
+        if (!place || typeof place.fetchFields !== "function") {
+          console.warn("[PlacesAutocomplete] pac.value is not a Place object — skipping");
+          return;
         }
+        await handleSelection(place);
       });
     });
 
@@ -204,7 +232,7 @@ export function PlacesAutocompleteInput({
           "--gmpx-color-surface-container-low": "#1c1c1f", // darker — dropdown row hover
           "--gmpx-color-surface-container-high": "#3f3f46",// zinc-700 — selected row
           "--gmpx-font-family-base": "var(--font-body, sans-serif)",
-          "--gmpx-font-size-base": "0.875rem",
+          "--gmpx-font-size-base": "1rem",
         } as React.CSSProperties
       }
     />
