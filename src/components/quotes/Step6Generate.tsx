@@ -75,6 +75,8 @@ export default function Step6Generate() {
   const [vizError, setVizError] = useState<string | null>(null);
   const [vizRenderUrl, setVizRenderUrl] = useState<string | null>(state.visualizerImageUrl ?? null);
   const [vizModelId, setVizModelId] = useState<string | null>(null);
+  const [vizStreetViewLoading, setVizStreetViewLoading] = useState(false);
+  const [vizStreetViewBase64, setVizStreetViewBase64] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Save state
@@ -86,8 +88,87 @@ export default function Step6Generate() {
     if (!file) return;
     setVizPhotoFile(file);
     setVizPhotoPreview(URL.createObjectURL(file));
+    setVizStreetViewBase64(null);
     setVizRenderUrl(null);
     setVizError(null);
+  }
+
+  async function handleFetchStreetView() {
+    setVizStreetViewLoading(true);
+    setVizError(null);
+
+    try {
+      // Resolve address — new customer from state, existing customer from Supabase
+      let address: string | null = null;
+      if (state.isNewCustomer) {
+        const parts = [
+          state.newCustomer.billing_address_line1,
+          state.newCustomer.billing_city,
+          state.newCustomer.billing_state,
+        ].filter(Boolean);
+        address = parts.length > 0 ? parts.join(", ") : null;
+      } else if (state.existingAccountId) {
+        const { data } = await supabase()
+          .from("accounts")
+          .select("billing_address_line1, billing_city, billing_state")
+          .eq("id", state.existingAccountId)
+          .single();
+        if (data) {
+          const d = data as { billing_address_line1?: string | null; billing_city?: string | null; billing_state?: string | null };
+          const parts = [d.billing_address_line1, d.billing_city, d.billing_state].filter(Boolean);
+          address = parts.length > 0 ? parts.join(", ") : null;
+        }
+      }
+
+      if (!address) {
+        setVizError("Add an address in Step 3 (Customer) to use Street View.");
+        return;
+      }
+
+      const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_STATIC_KEY;
+      if (!apiKey) {
+        setVizError("Maps API key not configured.");
+        return;
+      }
+
+      const svUrl = `https://maps.googleapis.com/maps/api/streetview?size=1024x768&location=${encodeURIComponent(address)}&fov=80&pitch=0&key=${apiKey}`;
+      const svRes = await fetch(svUrl);
+
+      if (!svRes.ok) {
+        setVizError("Street View request failed. Please upload a photo instead.");
+        return;
+      }
+
+      const contentType = svRes.headers.get("content-type") ?? "";
+      const blob = await svRes.blob();
+
+      // Google returns a grey placeholder (~4KB) when no imagery exists
+      if (!contentType.startsWith("image/") || blob.size < 5000) {
+        setVizError("No Street View imagery available for this address. Please upload a photo instead.");
+        return;
+      }
+
+      // Convert to base64
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const result = reader.result as string;
+          resolve(result.split(",")[1] ?? result);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+
+      const dataUrl = `data:${contentType};base64,${base64}`;
+      setVizStreetViewBase64(base64);
+      setVizPhotoFile(null);
+      setVizPhotoPreview(dataUrl);
+      setVizRenderUrl(null);
+    } catch (err) {
+      setVizError(err instanceof Error ? err.message : "Street View fetch failed.");
+    } finally {
+      setVizStreetViewLoading(false);
+    }
   }
 
   async function handleGenerateRender() {
@@ -112,6 +193,9 @@ export default function Step6Generate() {
       if (vizPhotoFile) {
         photoBase64 = await fileToBase64(vizPhotoFile);
         mimeType = vizPhotoFile.type || "image/jpeg";
+      } else if (vizStreetViewBase64) {
+        photoBase64 = vizStreetViewBase64;
+        mimeType = "image/jpeg";
       }
 
       const res = await fetch("/api/visualize/roof", {
@@ -506,10 +590,16 @@ export default function Step6Generate() {
                     alt="Selected house photo"
                     className="w-full max-h-48 object-cover rounded-xl border border-zinc-700"
                   />
+                  {vizStreetViewBase64 && (
+                    <span className="absolute top-2 left-2 rounded-lg bg-zinc-900/80 px-2 py-1 text-xs text-zinc-400">
+                      Street View
+                    </span>
+                  )}
                   <button
                     onClick={() => {
                       setVizPhotoFile(null);
                       setVizPhotoPreview(null);
+                      setVizStreetViewBase64(null);
                       setVizRenderUrl(null);
                     }}
                     className="absolute top-2 right-2 rounded-lg bg-zinc-900/80 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800 transition"
@@ -518,20 +608,53 @@ export default function Step6Generate() {
                   </button>
                 </div>
               ) : (
-                <label className="block w-full rounded-xl border-2 border-dashed border-zinc-700 hover:border-brand transition-colors p-6 text-center cursor-pointer">
-                  <svg className="w-8 h-8 text-zinc-600 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  <p className="text-sm text-zinc-400">Upload house exterior photo</p>
-                  <p className="text-xs text-zinc-600 mt-1">JPG or PNG</p>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    className="hidden"
-                    onChange={handlePhotoSelect}
-                  />
-                </label>
+                <div className="space-y-2">
+                  {/* Street View auto-fetch */}
+                  <button
+                    onClick={handleFetchStreetView}
+                    disabled={vizStreetViewLoading}
+                    className="w-full flex items-center justify-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-sm text-zinc-300 hover:border-brand hover:text-zinc-100 disabled:opacity-50 transition-colors"
+                  >
+                    {vizStreetViewLoading ? (
+                      <>
+                        <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        Fetching Street View…
+                      </>
+                    ) : (
+                      <>
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                        </svg>
+                        Use Street View for this address
+                      </>
+                    )}
+                  </button>
+
+                  <div className="flex items-center gap-2">
+                    <div className="h-px flex-1 bg-zinc-800" />
+                    <span className="text-xs text-zinc-600">or</span>
+                    <div className="h-px flex-1 bg-zinc-800" />
+                  </div>
+
+                  <label className="block w-full rounded-xl border-2 border-dashed border-zinc-700 hover:border-brand transition-colors p-6 text-center cursor-pointer">
+                    <svg className="w-8 h-8 text-zinc-600 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <p className="text-sm text-zinc-400">Upload house exterior photo</p>
+                    <p className="text-xs text-zinc-600 mt-1">JPG or PNG</p>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={handlePhotoSelect}
+                    />
+                  </label>
+                </div>
               )}
             </div>
 
