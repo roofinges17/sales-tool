@@ -6,6 +6,9 @@ import { useQuoteBuilder } from "@/lib/contexts/QuoteBuilderContext";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { RoofMeasure, type RoofData } from "@/components/RoofMeasure";
+import DamageAnalysis, { type DamageItem } from "@/components/quotes/DamageAnalysis";
+import MaterialAnalysis, { type MaterialItem } from "@/components/quotes/MaterialAnalysis";
+import VoiceEstimateRecorder, { type VoiceItem } from "@/components/quotes/VoiceEstimateRecorder";
 import type { CartItem } from "@/lib/contexts/QuoteBuilderContext";
 
 interface Product {
@@ -189,11 +192,13 @@ export default function Step2Products() {
                     </div>
 
                     <div className="flex items-center gap-3 flex-shrink-0">
-                      <Badge variant={product.product_type === "PRODUCT" ? "blue" : "purple"}>
-                        {product.product_type}
-                      </Badge>
+                      <span className="hidden sm:inline">
+                        <Badge variant={product.product_type === "PRODUCT" ? "blue" : "purple"}>
+                          {product.product_type}
+                        </Badge>
+                      </span>
                       {product.unit && (
-                        <span className="text-caption text-text-tertiary">{product.unit}</span>
+                        <span className="hidden sm:inline text-caption text-text-tertiary">{product.unit}</span>
                       )}
                       <span className="text-body-sm font-medium text-status-green min-w-[4rem] text-right">
                         {fmt(product.default_price ?? product.price)}
@@ -263,9 +268,75 @@ export default function Step2Products() {
           )}
         </div>
 
-        {/* Right: RoofMeasure + Estimate Items (hidden on mobile) */}
-        <div className="hidden lg:block space-y-4">
+        {/* Right: RoofMeasure + AI tools + Cart — stacks below catalog on mobile */}
+        <div className="space-y-4">
           <RoofMeasure onMeasured={handleRoofMeasured} />
+          <DamageAnalysis
+            products={products}
+            onAddToCart={(damageItems) => {
+              for (const { product, quantity, damageItem } of damageItems) {
+                const unitPrice = product.default_price ?? product.price ?? 0;
+                addToCart({
+                  product_id: product.id,
+                  product_name: `${product.name} (${damageItem.location})`,
+                  product_sku: product.code,
+                  quantity,
+                  unit_price: unitPrice * quantity,
+                  unit_cost: product.cost,
+                  min_price: product.min_price,
+                  max_price: product.max_price,
+                  default_price: product.default_price ?? product.price,
+                  product_type: product.product_type,
+                  unit: product.unit ?? damageItem.unit,
+                  is_manual_qty: true,
+                } satisfies Omit<CartItem, "line_total">);
+              }
+            }}
+          />
+          <MaterialAnalysis
+            products={products}
+            onAddToCart={(materialItems) => {
+              for (const { product, quantity, materialItem } of materialItems) {
+                const unitPrice = product.default_price ?? product.price ?? 0;
+                addToCart({
+                  product_id: product.id,
+                  product_name: `${product.name} (${materialItem.linear_feet} lf)`,
+                  product_sku: product.code,
+                  quantity,
+                  unit_price: unitPrice,
+                  unit_cost: product.cost,
+                  min_price: product.min_price,
+                  max_price: product.max_price,
+                  default_price: product.default_price ?? product.price,
+                  product_type: product.product_type,
+                  unit: "lf",
+                  is_manual_qty: true,
+                } satisfies Omit<CartItem, "line_total">);
+              }
+            }}
+          />
+          <VoiceEstimateRecorder
+            products={products}
+            onAddToCart={(voiceItems) => {
+              for (const { product, quantity, voiceItem } of voiceItems) {
+                const unitPrice = product.default_price ?? product.price ?? 0;
+                addToCart({
+                  product_id: product.id,
+                  product_name: `${product.name} (${voiceItem.description})`,
+                  product_sku: product.code,
+                  quantity,
+                  unit_price: unitPrice,
+                  unit_cost: product.cost,
+                  min_price: product.min_price,
+                  max_price: product.max_price,
+                  default_price: product.default_price ?? product.price,
+                  product_type: product.product_type,
+                  unit: product.unit ?? voiceItem.unit,
+                  is_manual_qty: true,
+                } satisfies Omit<CartItem, "line_total">);
+              }
+            }}
+          />
 
           {/* Estimate Items */}
           <div className="rounded-lg border border-border-subtle bg-surface-1 overflow-hidden">
@@ -329,7 +400,7 @@ export default function Step2Products() {
                           if (!e.target.value || isNaN(num) || num <= 0)
                             e.target.value = String(item.quantity);
                         }}
-                        className="w-16 h-6 rounded border border-border bg-surface-2 px-1.5 text-caption text-text-primary text-center focus:border-accent focus:outline-none"
+                        className="w-16 h-8 rounded border border-border bg-surface-2 px-1.5 text-caption text-text-primary text-center focus:border-accent focus:outline-none"
                       />
                       {item.unit && (
                         <span className="text-text-muted">{item.unit}</span>

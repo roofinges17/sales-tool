@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { Tabs } from "@/components/ui/Tabs";
 import PhotoUpload from "@/components/quotes/PhotoUpload";
 import PhotoGallery, { type ProjectPhoto } from "@/components/quotes/PhotoGallery";
+import PhotoVisualizerCanvas from "@/components/quotes/PhotoVisualizerCanvas";
 import { isUuid } from "@/lib/uuid";
 
 interface QuoteLineItem {
@@ -79,7 +80,7 @@ const statusVariant: Record<string, "gray" | "orange" | "blue" | "green" | "red"
   EXPIRED: "orange",
 };
 
-type TabKey = "overview" | "photos" | "notes";
+type TabKey = "overview" | "photos" | "notes" | "visualize";
 
 async function getNextContractNumber(prefix: string): Promise<string> {
   const { data } = await supabase()
@@ -114,6 +115,9 @@ function QuoteDetailContent() {
   const [copied, setCopied] = useState(false);
   const [generatingLink, setGeneratingLink] = useState(false);
   const [photos, setPhotos] = useState<ProjectPhoto[]>([]);
+  const [vizPhotoUrl, setVizPhotoUrl] = useState<string | null>(null);
+  const [vizSaving, setVizSaving] = useState(false);
+  const [vizSaved, setVizSaved] = useState(false);
 
   useEffect(() => {
     if (!quoteId) return;
@@ -497,6 +501,19 @@ function QuoteDetailContent() {
     }
   }
 
+  async function handleVizExport(dataUrl: string, colorId: string) {
+    if (!quoteId) return;
+    setVizSaving(true);
+    await supabase()
+      .from("quotes")
+      .update({ visualization_image: dataUrl, visualization_color_id: colorId })
+      .eq("id", quoteId);
+    setQuote((q) => q ? { ...q, visualization_image: dataUrl, visualization_color_id: colorId } : q);
+    setVizSaved(true);
+    setTimeout(() => setVizSaved(false), 3000);
+    setVizSaving(false);
+  }
+
   async function addNote() {
     if (!newNote.trim()) return;
     await supabase().from("quote_notes").insert({
@@ -544,6 +561,7 @@ function QuoteDetailContent() {
     { key: "overview", label: "Overview" },
     { key: "photos", label: `Photos${photos.length > 0 ? ` (${photos.length})` : ""}` },
     { key: "notes", label: "Notes" },
+    { key: "visualize", label: quote.visualization_image ? "Visualize ✓" : "Visualize" },
   ];
 
   return (
@@ -616,8 +634,8 @@ function QuoteDetailContent() {
             {/* Line items */}
             <div>
               <h3 className="text-sm font-semibold text-zinc-300 mb-3">Line Items</h3>
-              <div className="rounded-xl border border-zinc-800 overflow-hidden">
-                <table className="w-full text-sm">
+              <div className="rounded-xl border border-zinc-800 overflow-hidden overflow-x-auto">
+                <table className="w-full text-sm min-w-[480px]">
                   <thead className="border-b border-zinc-800 bg-zinc-900/60">
                     <tr className="text-xs uppercase tracking-wider text-zinc-500">
                       <th className="px-4 py-3 text-left">Item</th>
@@ -732,6 +750,72 @@ function QuoteDetailContent() {
                   </div>
                 ))}
               </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "visualize" && (
+          <div className="p-6 space-y-5">
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-300 mb-1">Roof Color Visualizer</h3>
+              <p className="text-xs text-zinc-500">
+                Upload a house photo, draw a polygon over the roof, and preview metal color options.
+                Save to attach the visualization to this quote and include it in the PDF.
+              </p>
+            </div>
+
+            {vizSaved && (
+              <div className="rounded-lg border border-emerald-800/40 bg-emerald-950/20 px-3 py-2 text-xs text-emerald-400">
+                Visualization saved to quote — will appear in the PDF export.
+              </div>
+            )}
+
+            {/* Existing saved visualization */}
+            {quote.visualization_image && !vizPhotoUrl && (
+              <div className="space-y-3">
+                <p className="text-xs text-zinc-500">Previously saved visualization:</p>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={quote.visualization_image}
+                  alt="Saved visualization"
+                  className="rounded-xl border border-zinc-800 max-w-full"
+                />
+                <button
+                  onClick={() => setVizPhotoUrl("__upload__")}
+                  className="text-xs text-brand hover:underline"
+                >
+                  Replace with new photo
+                </button>
+              </div>
+            )}
+
+            {/* Photo upload */}
+            {(!quote.visualization_image || vizPhotoUrl === "__upload__") && !vizPhotoUrl?.startsWith("blob:") && (
+              <label className="block w-full rounded-xl border-2 border-dashed border-zinc-700 hover:border-brand transition-colors p-8 text-center cursor-pointer">
+                <svg className="w-10 h-10 text-zinc-600 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <p className="text-sm text-zinc-400">Click to upload a house exterior photo</p>
+                <p className="text-xs text-zinc-600 mt-1">JPG or PNG — photo stays local, not uploaded to server</p>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) setVizPhotoUrl(URL.createObjectURL(file));
+                  }}
+                />
+              </label>
+            )}
+
+            {/* Canvas */}
+            {vizPhotoUrl && vizPhotoUrl.startsWith("blob:") && (
+              <PhotoVisualizerCanvas
+                imageUrl={vizPhotoUrl}
+                initialColorId={quote.visualization_color_id}
+                onExport={handleVizExport}
+              />
             )}
           </div>
         )}
