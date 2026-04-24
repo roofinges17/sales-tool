@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useQuoteBuilder } from "@/lib/contexts/QuoteBuilderContext";
+import { useAuth } from "@/lib/hooks/useAuth";
+import { ENGLERT_COLORS, METAL_ROOF_CODES } from "@/lib/visualizer-config";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { RoofMeasure, type RoofData } from "@/components/RoofMeasure";
@@ -39,19 +41,21 @@ function isRoofCode(code: string | null | undefined) {
 }
 
 export default function Step2Products() {
-  const { state, addToCart, removeFromCart, updateCartQty, setStep, subtotal } = useQuoteBuilder();
+  const { state, addToCart, removeFromCart, updateCartQty, setStep, subtotal, setRoofColor } = useQuoteBuilder();
+  const { profile } = useAuth();
+  const isSeller = profile?.role === "seller";
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterTab, setFilterTab] = useState<FilterTab>("All");
-  const [manualSqftId, setManualSqftId] = useState<string | null>(null);
-  const [manualSqftInput, setManualSqftInput] = useState("");
   const [measuredRoof, setMeasuredRoof] = useState<RoofData | null>(null);
 
   useEffect(() => {
     if (!state.departmentId) return;
+    // Sellers query the seller view (no cost column); managers+ query base table
+    const table = isSeller ? "products_seller_view" : "products";
     supabase()
-      .from("products")
+      .from(table)
       .select("*")
       .eq("department_id", state.departmentId)
       .eq("is_active", true)
@@ -61,7 +65,7 @@ export default function Step2Products() {
         setProducts((data as Product[]) ?? []);
         setLoading(false);
       });
-  }, [state.departmentId]);
+  }, [state.departmentId, isSeller]);
 
   const filteredProducts = products.filter((p) => {
     if ((p.default_price ?? p.price ?? 0) <= 0) return false;
@@ -76,48 +80,10 @@ export default function Step2Products() {
     return matchSearch && matchTab;
   });
 
-  function handleAddProduct(product: Product) {
-    const unitPrice = product.default_price ?? product.price ?? 0;
-    const item: Omit<CartItem, "line_total"> = {
-      product_id: product.id,
-      product_name: product.name,
-      product_sku: product.code,
-      product_description: product.description,
-      quantity: 1,
-      unit_price: unitPrice,
-      unit_cost: product.cost,
-      min_price: product.min_price,
-      max_price: product.max_price,
-      default_price: product.default_price ?? product.price,
-      product_type: product.product_type,
-      unit: product.unit,
-    };
-    addToCart(item);
-  }
-
-  function handleAddManual(product: Product) {
-    const sqft = parseFloat(manualSqftInput);
-    if (isNaN(sqft) || sqft <= 0) return;
-    const pricePerSqft = product.default_price ?? product.price ?? 0;
-    const item: Omit<CartItem, "line_total"> = {
-      product_id: product.id,
-      product_name: product.name,
-      product_sku: product.code,
-      product_description: `${sqft} sq ft`,
-      quantity: 1,
-      unit_price: pricePerSqft * sqft,
-      unit_cost: product.cost,
-      min_price: product.min_price,
-      max_price: product.max_price,
-      default_price: product.default_price ?? product.price,
-      product_type: product.product_type,
-      unit: "sq ft",
-      is_manual_qty: true,
-    };
-    addToCart(item);
-    setManualSqftId(null);
-    setManualSqftInput("");
-  }
+  const hasMetalRoof = state.cart.some((item) =>
+    METAL_ROOF_CODES.includes((item.product_sku ?? "").toUpperCase())
+  );
+  const needsColorSelection = hasMetalRoof && !state.roofColor;
 
   function handleRoofMeasured(data: RoofData) {
     setMeasuredRoof(data);
@@ -205,62 +171,64 @@ export default function Step2Products() {
                         {fmt(product.default_price ?? product.price)}
                       </span>
 
-                      {isRoofCode(product.code) ? (
-                        <div className="flex items-center gap-1.5">
-                          {manualSqftId === product.id ? (
-                            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                              <input
-                                type="number"
-                                min="1"
-                                step="1"
-                                autoFocus
-                                value={manualSqftInput}
-                                onChange={(e) => setManualSqftInput(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") handleAddManual(product);
-                                  if (e.key === "Escape") { setManualSqftId(null); setManualSqftInput(""); }
-                                }}
-                                placeholder="sq ft"
-                                className="w-20 rounded border border-accent bg-surface-2 px-2 py-0.5 text-xs text-text-primary outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                              />
-                              <button
-                                onClick={() => handleAddManual(product)}
-                                className="h-6 px-2 rounded bg-accent text-white text-xs font-medium hover:brightness-110 transition"
-                              >
-                                Add
-                              </button>
-                              <button
-                                onClick={() => { setManualSqftId(null); setManualSqftInput(""); }}
-                                className="h-6 w-6 rounded bg-surface-3 text-text-muted text-xs flex items-center justify-center hover:bg-surface-2 transition"
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          ) : (
+                      {(() => {
+                        const cartItem = state.cart.find(i => i.product_id === product.id);
+                        const qty = cartItem?.quantity ?? 0;
+                        const inCart = qty > 0;
+
+                        const onPlus = () => {
+                          if (!cartItem) {
+                            const autoQty = isRoofCode(product.code) && measuredRoof
+                              ? Math.max(1, getAutoSqft(product.code))
+                              : 1;
+                            addToCart({
+                              product_id: product.id,
+                              product_name: product.name,
+                              product_sku: product.code,
+                              product_description: product.description,
+                              quantity: autoQty,
+                              unit_price: product.default_price ?? product.price ?? 0,
+                              unit_cost: product.cost,
+                              min_price: product.min_price,
+                              max_price: product.max_price,
+                              default_price: product.default_price ?? product.price,
+                              product_type: product.product_type,
+                              unit: product.unit,
+                            });
+                          } else {
+                            updateCartQty(product.id, cartItem.quantity + 1);
+                          }
+                        };
+
+                        const onMinus = () => {
+                          if (!cartItem) return;
+                          if (cartItem.quantity <= 1) removeFromCart(product.id);
+                          else updateCartQty(product.id, cartItem.quantity - 1);
+                        };
+
+                        return (
+                          <div className="flex items-center gap-1">
                             <button
-                              onClick={() => {
-                                setManualSqftId(product.id);
-                                const auto = getAutoSqft(product.code);
-                                setManualSqftInput(auto > 0 ? String(auto) : "");
-                              }}
-                              className="text-xs text-text-muted hover:text-accent transition whitespace-nowrap border border-border rounded px-2 py-1 hover:border-accent"
-                              title={measuredRoof ? "Click to use measured area" : "Enter sq ft manually"}
-                            >
-                              {measuredRoof ? `${getAutoSqft(product.code)} sf` : "sq ft"}
-                            </button>
-                          )}
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => handleAddProduct(product)}
-                          className="w-8 h-8 rounded-full bg-status-green/20 text-status-green hover:bg-status-green/30 flex items-center justify-center transition-colors"
-                          aria-label={`Add ${product.name}`}
-                        >
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                          </svg>
-                        </button>
-                      )}
+                              onClick={onMinus}
+                              disabled={!inCart}
+                              className={`w-7 h-7 rounded flex items-center justify-center text-sm font-bold transition-colors ${
+                                inCart ? "bg-accent/20 text-accent hover:bg-accent/30" : "opacity-30 bg-surface-3 text-text-muted cursor-not-allowed"
+                              }`}
+                              aria-label="Remove one"
+                            >−</button>
+                            <span className={`w-8 text-center text-sm font-medium tabular-nums ${inCart ? "text-accent" : "text-text-muted"}`}>
+                              {qty}
+                            </span>
+                            <button
+                              onClick={onPlus}
+                              className={`w-7 h-7 rounded flex items-center justify-center text-sm font-bold transition-colors ${
+                                inCart ? "bg-accent/20 text-accent hover:bg-accent/30" : "bg-surface-2 text-text-secondary hover:bg-accent/20 hover:text-accent"
+                              }`}
+                              aria-label="Add one"
+                            >+</button>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 ))}
@@ -433,6 +401,92 @@ export default function Step2Products() {
         </div>
       </div>
 
+      {/* Required roof color picker for metal-roof products */}
+      {hasMetalRoof && (
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-zinc-100">
+                Roof Color <span className="text-red-400">*</span>
+              </p>
+              <p className="text-xs text-zinc-500 mt-0.5">
+                Required — customer signs for this color. Choose the Englert color they&apos;re purchasing.
+              </p>
+            </div>
+            {state.roofColor && (
+              <div className="flex items-center gap-2">
+                <div
+                  className="h-5 w-5 rounded border border-zinc-600"
+                  style={{ backgroundColor: ENGLERT_COLORS.find((c) => c.name === state.roofColor)?.hex ?? "#888" }}
+                />
+                <span className="text-sm font-medium text-zinc-100">{state.roofColor}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Best-sellers */}
+          <div>
+            <p className="text-xs text-zinc-500 mb-2 font-medium">★ Best Sellers</p>
+            <div className="flex flex-wrap gap-2">
+              {ENGLERT_COLORS.filter((c) => c.isBestSeller).map((color) => (
+                <button
+                  key={color.name}
+                  title={color.name}
+                  onClick={() => setRoofColor(color.name)}
+                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium border transition-all ${
+                    state.roofColor === color.name
+                      ? "border-white bg-zinc-800 text-zinc-100"
+                      : "border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
+                  }`}
+                >
+                  <span
+                    className="inline-block h-3 w-3 rounded-sm border border-zinc-600"
+                    style={{ backgroundColor: color.hex }}
+                  />
+                  {color.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Extended palette */}
+          <details className="group">
+            <summary className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-300 transition-colors list-none flex items-center gap-1">
+              <svg className="h-3 w-3 transition-transform group-open:rotate-90" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+              More colors
+            </summary>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {ENGLERT_COLORS.filter((c) => !c.isBestSeller).map((color) => (
+                <button
+                  key={color.name}
+                  title={color.name}
+                  onClick={() => setRoofColor(color.name)}
+                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium border transition-all ${
+                    state.roofColor === color.name
+                      ? "border-white bg-zinc-800 text-zinc-100"
+                      : "border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
+                  }`}
+                >
+                  <span
+                    className="inline-block h-3 w-3 rounded-sm border border-zinc-600"
+                    style={{ backgroundColor: color.hex }}
+                  />
+                  {color.name}
+                </button>
+              ))}
+            </div>
+          </details>
+
+          {needsColorSelection && (
+            <p className="text-xs text-red-400 rounded-lg border border-red-900/40 bg-red-950/20 px-3 py-2">
+              Please select a roof color before continuing. The customer will sign for this specific color.
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Navigation — full width below the grid */}
       <div className="flex items-center justify-between pt-2">
         <Button variant="secondary" onClick={() => setStep(1)}>
@@ -442,7 +496,7 @@ export default function Step2Products() {
           {state.cart.length === 0 && (
             <p className="text-caption text-text-muted">Add at least one item to continue.</p>
           )}
-          <Button disabled={state.cart.length === 0} onClick={() => setStep(3)}>
+          <Button disabled={state.cart.length === 0 || needsColorSelection} onClick={() => setStep(3)}>
             Continue
           </Button>
         </div>

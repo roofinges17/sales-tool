@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useQuoteBuilder } from "@/lib/contexts/QuoteBuilderContext";
 import { Button } from "@/components/ui/Button";
+import { ENGLERT_COLORS, VISUALIZER_FINISHES, type VisualizerFinish, findEnglertColor } from "@/lib/visualizer-config";
 
 function formatCurrency(v: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v);
@@ -28,6 +29,19 @@ async function getNextEstimateNumber(prefix: string): Promise<string> {
   return `${prefix}${String(nextNum).padStart(4, "0")}`;
 }
 
+async function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // Strip the data URL prefix — Gemini wants raw base64
+      resolve(result.split(",")[1] ?? result);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function Step6Generate() {
   const { user } = useAuth();
   const {
@@ -41,19 +55,175 @@ export default function Step6Generate() {
     monthlyPayment,
     commissions,
     reset,
+    clearDraft,
+    editingQuoteId,
+    setVisualizerState,
   } = useQuoteBuilder();
-  const visualizationColorId = state.visualizationColorId;
-  const compositeImageDataUrl = state.compositeImageDataUrl;
+
   const folioNumber = state.folioNumber;
+  const roofColor = state.roofColor;
+
+  // Visualizer state
+  const [vizEnabled, setVizEnabled] = useState(state.visualizerEnabled);
+  const [vizPhotoFile, setVizPhotoFile] = useState<File | null>(null);
+  const [vizPhotoPreview, setVizPhotoPreview] = useState<string | null>(null);
+  const [vizColor, setVizColor] = useState<string>(state.visualizerColor ?? roofColor ?? ENGLERT_COLORS[0].name);
+  const [vizFinish, setVizFinish] = useState<VisualizerFinish>(
+    (state.visualizerFinish as VisualizerFinish | null) ?? "Matte",
+  );
+  const [vizRendering, setVizRendering] = useState(false);
+  const [vizError, setVizError] = useState<string | null>(null);
+  const [vizRenderUrl, setVizRenderUrl] = useState<string | null>(state.visualizerImageUrl ?? null);
+  const [vizModelId, setVizModelId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Save state
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setVizPhotoFile(file);
+    setVizPhotoPreview(URL.createObjectURL(file));
+    setVizRenderUrl(null);
+    setVizError(null);
+  }
+
+  async function handleGenerateRender() {
+    if (!vizPhotoFile && !vizPhotoPreview) {
+      setVizError("Upload a photo first.");
+      return;
+    }
+    if (!vizColor) {
+      setVizError("Select a color first.");
+      return;
+    }
+
+    setVizRendering(true);
+    setVizError(null);
+
+    try {
+      const token = (await supabase().auth.getSession()).data.session?.access_token;
+      if (!token) throw new Error("Not authenticated");
+
+      let photoBase64: string | undefined;
+      let mimeType = "image/jpeg";
+      if (vizPhotoFile) {
+        photoBase64 = await fileToBase64(vizPhotoFile);
+        mimeType = vizPhotoFile.type || "image/jpeg";
+      }
+
+      const res = await fetch("/api/visualize/roof", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          photo_base64: photoBase64,
+          mime_type: mimeType,
+          color: vizColor,
+          finish: vizFinish,
+          quote_id: editingQuoteId ?? undefined,
+        }),
+      });
+
+      const json = (await res.json()) as { render_url?: string; error?: string; model_id?: string };
+      if (!res.ok || !json.render_url) {
+        throw new Error(json.error ?? "Render failed");
+      }
+
+      setVizRenderUrl(json.render_url);
+      setVizModelId(json.model_id ?? null);
+      setVisualizerState({ imageUrl: json.render_url, color: vizColor, finish: vizFinish });
+    } catch (err) {
+      setVizError(err instanceof Error ? err.message : "Render failed");
+    } finally {
+      setVizRendering(false);
+    }
+  }
+
+  function handleUseRender() {
+    if (!vizRenderUrl) return;
+    setVisualizerState({ enabled: true, imageUrl: vizRenderUrl, color: vizColor, finish: vizFinish });
+  }
+
+  function handleToggleViz(on: boolean) {
+    setVizEnabled(on);
+    setVisualizerState({ enabled: on });
+    if (!on) {
+      setVisualizerState({ enabled: false, imageUrl: null });
+      setVizRenderUrl(null);
+    }
+  }
 
   async function handleSave() {
     setSaving(true);
     setError(null);
 
     try {
-      // Get company settings for prefix
+      const isEditing = !!editingQuoteId;
+      const validUntil = new Date();
+      validUntil.setDate(validUntil.getDate() + state.validDays);
+
+      const basePayload = {
+        subtotal,
+        discount_type: state.discountType,
+        discount_value: state.discountValue || null,
+        discount_amount: discountAmount || null,
+        tax_rate: state.taxRate,
+        tax_exempt: state.taxExempt,
+        tax_amount: taxAmount,
+        total,
+        financing_provider: state.selectedFinancingPlan?.provider_name ?? null,
+        financing_term: state.selectedFinancingPlan?.term_months ?? null,
+        financing_rate: state.selectedFinancingPlan?.apr ?? null,
+        monthly_payment: monthlyPayment || null,
+        valid_until: validUntil.toISOString().split("T")[0],
+        notes: state.notes || null,
+        account_id: state.existingAccountId,
+        department_id: state.departmentId,
+        folio_number: folioNumber || null,
+        roof_color: roofColor ?? null,
+        visualizer_image_url: vizEnabled && vizRenderUrl ? vizRenderUrl : null,
+        visualizer_color: vizEnabled && vizRenderUrl ? vizColor : null,
+        visualizer_finish: vizEnabled && vizRenderUrl ? vizFinish : null,
+        // Keep legacy fields for backward compat with existing quotes
+        visualization_color_id: state.visualizationColorId ?? null,
+        visualization_image: state.compositeImageDataUrl ?? null,
+      };
+
+      if (isEditing) {
+        const { error: updateErr } = await supabase()
+          .from("quotes")
+          .update(basePayload)
+          .eq("id", editingQuoteId!);
+        if (updateErr) throw new Error(updateErr.message);
+
+        await supabase().from("quote_line_items").delete().eq("quote_id", editingQuoteId!);
+        const lineItems = state.cart.map((item, i) => ({
+          quote_id: editingQuoteId!,
+          product_id: item.product_id,
+          product_name: item.product_name,
+          product_sku: item.product_sku ?? null,
+          product_description: item.product_description ?? null,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          unit_cost: item.unit_cost ?? null,
+          line_total: item.line_total,
+          sort_order: i,
+        }));
+        const { error: lineErr } = await supabase().from("quote_line_items").insert(lineItems);
+        if (lineErr) throw new Error(lineErr.message);
+
+        clearDraft();
+        reset();
+        window.location.href = `/quotes/detail/?id=${editingQuoteId}`;
+        return;
+      }
+
+      // New quote
       const { data: settings } = await supabase()
         .from("company_settings")
         .select("estimate_prefix")
@@ -62,7 +232,6 @@ export default function Step6Generate() {
       const prefix = (settings as { estimate_prefix?: string } | null)?.estimate_prefix ?? "EST-";
       const estimateName = await getNextEstimateNumber(prefix);
 
-      // If new customer, create account first
       let accountId = state.existingAccountId;
       if (state.isNewCustomer) {
         const { data: newAcc, error: accErr } = await supabase()
@@ -85,36 +254,15 @@ export default function Step6Generate() {
         accountId = (newAcc as { id: string }).id;
       }
 
-      // Valid until date
-      const validUntil = new Date();
-      validUntil.setDate(validUntil.getDate() + state.validDays);
-
-      // Insert quote
       const { data: quote, error: quoteErr } = await supabase()
         .from("quotes")
         .insert({
           name: estimateName,
           status: "DRAFT",
-          subtotal,
-          discount_type: state.discountType,
-          discount_value: state.discountValue || null,
-          discount_amount: discountAmount || null,
-          tax_rate: state.taxRate,
-          tax_amount: taxAmount,
-          total,
-          financing_provider: state.selectedFinancingPlan?.provider_name ?? null,
-          financing_term: state.selectedFinancingPlan?.term_months ?? null,
-          financing_rate: state.selectedFinancingPlan?.apr ?? null,
-          monthly_payment: monthlyPayment || null,
-          valid_until: validUntil.toISOString().split("T")[0],
-          notes: state.notes || null,
-          account_id: accountId,
-          department_id: state.departmentId,
+          ...basePayload,
           created_by_id: user?.id ?? null,
           assigned_to_id: user?.id ?? null,
-          visualization_color_id: visualizationColorId ?? null,
-          visualization_image: compositeImageDataUrl ?? null,
-          folio_number: folioNumber || null,
+          account_id: accountId,
         })
         .select()
         .single();
@@ -122,7 +270,6 @@ export default function Step6Generate() {
 
       const quoteId = (quote as { id: string }).id;
 
-      // Insert line items
       const lineItems = state.cart.map((item, i) => ({
         quote_id: quoteId,
         product_id: item.product_id,
@@ -135,11 +282,10 @@ export default function Step6Generate() {
         line_total: item.line_total,
         sort_order: i,
       }));
-
       const { error: lineErr } = await supabase().from("quote_line_items").insert(lineItems);
       if (lineErr) throw new Error(lineErr.message);
 
-      // GHL contact sync — fire-and-forget, never blocks save
+      // GHL sync — fire-and-forget
       if (accountId) {
         (async () => {
           try {
@@ -155,13 +301,13 @@ export default function Step6Generate() {
                 .update({ ghl_contact_id: ghlContactId, ghl_last_sync_at: new Date().toISOString() })
                 .eq("id", accountId!);
             }
-          } catch (ghlErr) {
-            // GHL sync failure never surfaces to user, but log for debugging
-            console.warn("[Step6Generate] GHL contact sync failed:", ghlErr);
+          } catch {
+            // GHL sync never blocks save
           }
         })();
       }
 
+      clearDraft();
       reset();
       window.location.href = `/quotes/detail/?id=${quoteId}`;
     } catch (err) {
@@ -171,6 +317,7 @@ export default function Step6Generate() {
   }
 
   const customerName = state.existingAccountName || state.newCustomer.name;
+  const selectedVizColor = findEnglertColor(vizColor);
 
   return (
     <div className="space-y-6">
@@ -179,27 +326,25 @@ export default function Step6Generate() {
         <p className="text-sm text-zinc-500 mt-1">Review the estimate before saving.</p>
       </div>
 
-      {/* Estimate Preview Document */}
+      {/* Estimate Preview */}
       <div className="rounded-2xl border border-zinc-700 bg-zinc-900 overflow-hidden">
-        {/* Header */}
         <div className="bg-zinc-800 px-8 py-6 flex items-start justify-between">
           <div>
             <h1 className="text-xl font-bold text-zinc-50">ESTIMATE</h1>
-            <p className="text-sm text-zinc-400 mt-1">
-              Valid for {state.validDays} days from issue date
-            </p>
+            <p className="text-sm text-zinc-400 mt-1">Valid for {state.validDays} days from issue date</p>
           </div>
           <div className="text-right">
             <p className="text-sm font-medium text-zinc-300">Roofing Experts</p>
             <p className="text-xs text-zinc-500">Estimate prepared for:</p>
             <p className="text-sm font-semibold text-zinc-100 mt-0.5">{customerName || "Customer"}</p>
             {folioNumber && (
-              <p className="text-xs text-zinc-500 mt-1">Folio: <span className="text-zinc-300 font-mono">{folioNumber}</span></p>
+              <p className="text-xs text-zinc-500 mt-1">
+                Folio: <span className="text-zinc-300 font-mono">{folioNumber}</span>
+              </p>
             )}
           </div>
         </div>
 
-        {/* Line items */}
         <div className="px-8 py-6">
           <table className="w-full text-sm">
             <thead>
@@ -213,10 +358,20 @@ export default function Step6Generate() {
             <tbody className="divide-y divide-zinc-800">
               {state.cart.map((item) => {
                 const isMeasured = item.unit === "section";
+                const isMetalItem = ["ALUMINUM", "METAL"].includes((item.product_sku ?? "").toUpperCase());
                 return (
                   <tr key={item.product_id}>
                     <td className="py-3">
                       <p className="font-medium text-zinc-100">{item.product_name}</p>
+                      {isMetalItem && roofColor && (
+                        <p className="text-xs text-zinc-400 mt-0.5 flex items-center gap-1.5">
+                          <span
+                            className="inline-block h-3 w-3 rounded-sm border border-zinc-600"
+                            style={{ backgroundColor: findEnglertColor(roofColor)?.hex ?? "#888" }}
+                          />
+                          Color: {roofColor}
+                        </p>
+                      )}
                       {item.product_description && (
                         <p className="text-xs text-zinc-500">{item.product_description}</p>
                       )}
@@ -234,8 +389,7 @@ export default function Step6Generate() {
             </tbody>
           </table>
 
-          {/* Totals */}
-          <div className="mt-6 ml-auto w-64 space-y-2">
+          <div className="mt-6 ml-auto w-72 space-y-2">
             <div className="flex justify-between text-sm">
               <span className="text-zinc-400">Subtotal</span>
               <span className="text-zinc-200">{formatCurrency(subtotal)}</span>
@@ -253,8 +407,17 @@ export default function Step6Generate() {
               </div>
             )}
             <div className="flex justify-between text-sm">
-              <span className="text-zinc-400">Tax ({(state.taxRate * 100).toFixed(1)}%)</span>
-              <span className="text-zinc-200">{formatCurrency(taxAmount)}</span>
+              {state.taxExempt ? (
+                <>
+                  <span className="text-zinc-500">Tax (exempt)</span>
+                  <span className="text-zinc-500">$0.00</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-zinc-400">Tax ({(state.taxRate * 100).toFixed(1)}%)</span>
+                  <span className="text-zinc-200">{formatCurrency(taxAmount)}</span>
+                </>
+              )}
             </div>
             <div className="border-t border-zinc-700 pt-2 flex justify-between">
               <span className="font-bold text-zinc-100">Total</span>
@@ -262,7 +425,6 @@ export default function Step6Generate() {
             </div>
           </div>
 
-          {/* Financing disclosure */}
           {state.useFinancing && state.selectedFinancingPlan && (
             <div className="mt-6 rounded-xl border border-brand/30 bg-brand/5 p-4">
               <p className="text-sm font-semibold text-brand mb-1">Financing Option</p>
@@ -287,7 +449,6 @@ export default function Step6Generate() {
           )}
         </div>
 
-        {/* Commission summary */}
         <div className="border-t border-zinc-800 bg-zinc-950/50 px-8 py-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Internal Commission Summary</p>
           <div className="flex gap-8 text-sm">
@@ -307,6 +468,169 @@ export default function Step6Generate() {
         </div>
       </div>
 
+      {/* AI Roof Visualization */}
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-zinc-100">AI Roof Visualization</p>
+            <p className="text-xs text-zinc-500 mt-0.5">
+              Include a photoreal AI-rendered roof preview in this estimate.
+            </p>
+          </div>
+          <button
+            role="switch"
+            aria-checked={vizEnabled}
+            onClick={() => handleToggleViz(!vizEnabled)}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${
+              vizEnabled ? "bg-brand" : "bg-zinc-700"
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition-transform ${
+                vizEnabled ? "translate-x-5" : "translate-x-0"
+              }`}
+            />
+          </button>
+        </div>
+
+        {vizEnabled && (
+          <div className="space-y-4">
+            {/* Photo input */}
+            <div>
+              <p className="text-xs font-medium text-zinc-400 mb-2">House Photo</p>
+              {vizPhotoPreview ? (
+                <div className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={vizPhotoPreview}
+                    alt="Selected house photo"
+                    className="w-full max-h-48 object-cover rounded-xl border border-zinc-700"
+                  />
+                  <button
+                    onClick={() => {
+                      setVizPhotoFile(null);
+                      setVizPhotoPreview(null);
+                      setVizRenderUrl(null);
+                    }}
+                    className="absolute top-2 right-2 rounded-lg bg-zinc-900/80 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800 transition"
+                  >
+                    Change
+                  </button>
+                </div>
+              ) : (
+                <label className="block w-full rounded-xl border-2 border-dashed border-zinc-700 hover:border-brand transition-colors p-6 text-center cursor-pointer">
+                  <svg className="w-8 h-8 text-zinc-600 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <p className="text-sm text-zinc-400">Upload house exterior photo</p>
+                  <p className="text-xs text-zinc-600 mt-1">JPG or PNG</p>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={handlePhotoSelect}
+                  />
+                </label>
+              )}
+            </div>
+
+            {/* Color picker */}
+            <div>
+              <p className="text-xs font-medium text-zinc-400 mb-2">
+                Render Color{" "}
+                {roofColor && roofColor !== vizColor && (
+                  <button
+                    onClick={() => setVizColor(roofColor)}
+                    className="text-brand hover:underline"
+                  >
+                    (use quote color: {roofColor})
+                  </button>
+                )}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {ENGLERT_COLORS.filter((c) => c.isBestSeller).map((color) => (
+                  <button
+                    key={color.name}
+                    title={color.name}
+                    onClick={() => setVizColor(color.name)}
+                    className={`flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs border transition-all ${
+                      vizColor === color.name
+                        ? "border-white bg-zinc-800 text-zinc-100"
+                        : "border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-500"
+                    }`}
+                  >
+                    <span className="inline-block h-3 w-3 rounded-sm border border-zinc-600" style={{ backgroundColor: color.hex }} />
+                    {color.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Finish */}
+            <div className="flex gap-2">
+              {VISUALIZER_FINISHES.map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setVizFinish(f)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-medium border transition-all ${
+                    vizFinish === f
+                      ? "border-white bg-zinc-800 text-zinc-100"
+                      : "border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-500"
+                  }`}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+
+            {/* Generate / result */}
+            {vizError && (
+              <p className="text-xs text-red-400 rounded-lg border border-red-900/40 bg-red-950/20 px-3 py-2">
+                {vizError}
+              </p>
+            )}
+
+            {!vizRenderUrl ? (
+              <Button
+                onClick={handleGenerateRender}
+                loading={vizRendering}
+                disabled={!vizPhotoPreview || vizRendering}
+                className="w-full"
+              >
+                {vizRendering ? "Generating… (10–20 sec)" : "Generate Preview"}
+              </Button>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-xs text-zinc-500">Before / After</p>
+                <div className="grid grid-cols-2 gap-3">
+                  {vizPhotoPreview && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={vizPhotoPreview} alt="Before" className="rounded-xl border border-zinc-700 w-full object-cover" />
+                  )}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={vizRenderUrl} alt="After" className="rounded-xl border border-brand/40 w-full object-cover" />
+                </div>
+                {vizModelId && (
+                  <p className="text-xs text-zinc-600">Model: {vizModelId}</p>
+                )}
+                <div className="flex gap-2">
+                  <Button
+                    variant="secondary"
+                    onClick={() => { setVizRenderUrl(null); setVizError(null); }}
+                  >
+                    Regenerate
+                  </Button>
+                  <Button onClick={handleUseRender} className="flex-1">
+                    ✓ Use This Render
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {error && (
         <div className="rounded-xl border border-red-800/50 bg-red-950/30 px-4 py-3 text-sm text-red-300">
           {error}
@@ -315,14 +639,15 @@ export default function Step6Generate() {
 
       <div className="flex gap-3">
         <Button variant="secondary" onClick={() => setStep(5)}>Back</Button>
-        <Button
-          className="flex-1"
-          onClick={handleSave}
-          loading={saving}
-        >
-          {saving ? "Saving Estimate…" : "Save Estimate"}
+        <Button className="flex-1" onClick={handleSave} loading={saving}>
+          {saving
+            ? editingQuoteId ? "Saving Changes…" : "Saving Estimate…"
+            : editingQuoteId ? "Save Changes" : "Save Estimate"}
         </Button>
       </div>
+
+      {/* Suppress unused variable warning */}
+      {selectedVizColor && null}
     </div>
   );
 }

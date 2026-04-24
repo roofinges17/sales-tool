@@ -4,7 +4,7 @@ import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { Card, CardContent } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Tabs } from "@/components/ui/Tabs";
@@ -12,11 +12,11 @@ import { Modal } from "@/components/ui/Modal";
 import { toast } from "sonner";
 import PhotoUpload from "@/components/quotes/PhotoUpload";
 import PhotoGallery, { type ProjectPhoto } from "@/components/quotes/PhotoGallery";
-import PhotoVisualizerCanvas from "@/components/quotes/PhotoVisualizerCanvas";
 import { isUuid } from "@/lib/uuid";
 
 interface QuoteLineItem {
   id: string;
+  product_id?: string | null;
   product_name: string;
   product_sku?: string | null;
   quantity: number;
@@ -34,6 +34,7 @@ interface QuoteDetail {
   discount_value?: number | null;
   discount_amount?: number | null;
   tax_rate?: number | null;
+  tax_exempt?: boolean | null;
   tax_amount?: number | null;
   total?: number | null;
   monthly_payment?: number | null;
@@ -49,6 +50,8 @@ interface QuoteDetail {
   customer_signature_data_url?: string | null;
   visualization_color_id?: string | null;
   visualization_image?: string | null;
+  roof_color?: string | null;
+  visualizer_image_url?: string | null;
   folio_number?: string | null;
   account?: {
     id: string;
@@ -84,23 +87,6 @@ const statusVariant: Record<string, "gray" | "orange" | "blue" | "green" | "red"
 
 type TabKey = "overview" | "photos" | "notes" | "visualize";
 
-async function getNextContractNumber(prefix: string): Promise<string> {
-  const { data, error } = await supabase()
-    .from("sales")
-    .select("contract_number")
-    .ilike("contract_number", `${prefix}%`)
-    .order("created_at", { ascending: false })
-    .limit(1);
-  if (error) console.error("[getNextContractNumber]", error.message);
-
-  let nextNum = 1;
-  if (data && data.length > 0) {
-    const last = (data[0] as { contract_number?: string | null }).contract_number ?? "";
-    const numPart = parseInt(last.replace(prefix, "")) || 0;
-    nextNum = numPart + 1;
-  }
-  return `${prefix}${String(nextNum).padStart(4, "0")}`;
-}
 
 function QuoteDetailContent() {
   const searchParams = useSearchParams();
@@ -111,23 +97,16 @@ function QuoteDetailContent() {
   const [quote, setQuote] = useState<QuoteDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
-  const [converting, setConverting] = useState(false);
-  const [updating, setUpdating] = useState(false);
   const [newNote, setNewNote] = useState("");
   const [notes, setNotes] = useState<Array<{ id: string; content: string; author_name?: string; created_at: string }>>([]);
-  const [copied, setCopied] = useState(false);
-  const [generatingLink, setGeneratingLink] = useState(false);
   const [photos, setPhotos] = useState<ProjectPhoto[]>([]);
-  const [vizPhotoUrl, setVizPhotoUrl] = useState<string | null>(null);
-  const [vizSaving, setVizSaving] = useState(false);
-  const [vizSaved, setVizSaved] = useState(false);
   const [deleteModal, setDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [editModal, setEditModal] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [editDraft, setEditDraft] = useState({ name: "", valid_until: "", status: "", notes: "", assigned_to_id: "", department_id: "" });
-  const [editUsers, setEditUsers] = useState<Array<{ id: string; name: string }>>([]);
-  const [editDepts, setEditDepts] = useState<Array<{ id: string; name: string }>>([]);
+  const [cloning, setCloning] = useState(false);
+  const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
+  const [emailLinkModal, setEmailLinkModal] = useState(false);
+  const [emailLinkAddress, setEmailLinkAddress] = useState("");
+  const [emailLinkSending, setEmailLinkSending] = useState(false);
 
   useEffect(() => {
     if (!quoteId) return;
@@ -140,7 +119,7 @@ function QuoteDetailContent() {
     setLoading(true);
     const { data, error } = await supabase()
       .from("quotes")
-      .select("*, accept_token, accepted_at, signed_at, customer_signature_data_url, visualization_color_id, visualization_image, account:account_id(id, name, email, billing_address_line1, billing_city, billing_state, billing_zip), assigned_to:assigned_to_id(id, name), department:department_id(id, name), quote_line_items(*)")
+      .select("*, accept_token, accepted_at, signed_at, customer_signature_data_url, visualization_color_id, visualization_image, roof_color, visualizer_image_url, account:account_id(id, name, email, billing_address_line1, billing_city, billing_state, billing_zip), assigned_to:assigned_to_id(id, name), department:department_id(id, name), quote_line_items(*)")
       .eq("id", quoteId!)
       .single();
     if (error && error.code !== "PGRST116") toast.error("Failed to load estimate: " + error.message);
@@ -228,9 +207,38 @@ function QuoteDetailContent() {
       });
     }
 
-    // Visualization: use stored data URL (captured at estimate creation) if available
-    const { findColor } = await import("@/lib/metal-colors");
-    const vizColor = quote.visualization_color_id ? findColor(quote.visualization_color_id) : null;
+    // Roof color — prefer new roof_color field, fall back to legacy visualization_color_id
+    const { findEnglertColor } = await import("@/lib/visualizer-config");
+    const roofColorName = quote.roof_color ?? undefined;
+    const roofColorHex = roofColorName ? findEnglertColor(roofColorName)?.hex : undefined;
+
+    // Fetch Gemini render as base64 JPEG for PDF embedding (prefer new over legacy)
+    let visualizerImageDataUrl: string | undefined;
+    if (quote.visualizer_image_url) {
+      try {
+        const renderRes = await fetch(quote.visualizer_image_url);
+        const renderBlob = await renderRes.blob();
+        visualizerImageDataUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(renderBlob);
+        });
+      } catch {
+        // non-blocking — PDF still generates without render image
+      }
+    }
+    // Legacy inline data URL (old canvas render)
+    const legacyImageDataUrl = !visualizerImageDataUrl ? (quote.visualization_image ?? undefined) : undefined;
+    // Legacy color name from metal-colors (only needed if no new roof_color)
+    let legacyColorName: string | undefined;
+    if (!roofColorName && quote.visualization_color_id) {
+      try {
+        const { findColor } = await import("@/lib/metal-colors");
+        legacyColorName = findColor(quote.visualization_color_id)?.name;
+      } catch {
+        // ignore
+      }
+    }
 
     // Collect up to 6 BEFORE photos, fetched as base64 data URLs for PDF embedding
     const beforePhotoUrls: string[] = [];
@@ -257,9 +265,14 @@ function QuoteDetailContent() {
       propertyAddress,
       folioNumber,
       subtotal: quote.subtotal ?? 0,
+      taxAmount: quote.tax_amount ?? 0,
+      taxExempt: quote.tax_exempt ?? false,
       sections,
-      visualizationImageDataUrl: quote.visualization_image ?? undefined,
-      visualizationColorName: vizColor?.name ?? undefined,
+      roofColor: roofColorName,
+      roofColorHex,
+      visualizerImageDataUrl: visualizerImageDataUrl,
+      visualizationImageDataUrl: legacyImageDataUrl,
+      visualizationColorName: roofColorName ?? legacyColorName,
       beforePhotos: beforePhotoUrls.length > 0 ? beforePhotoUrls : undefined,
       companyName: cs?.company_name ?? undefined,
       companyLicenseNumber: cs?.license_number ?? undefined,
@@ -269,26 +282,33 @@ function QuoteDetailContent() {
     });
   }
 
-  async function getOrCreateAcceptLink(): Promise<string> {
-    if (!quote) return "";
-    let token = quote.accept_token;
-    if (!token) {
-      setGeneratingLink(true);
-      token = crypto.randomUUID();
-      await supabase().from("quotes").update({ accept_token: token }).eq("id", quote.id);
-      setQuote((q) => q ? { ...q, accept_token: token! } : q);
-      setGeneratingLink(false);
-    }
-    const base = window.location.origin;
-    return `${base}/accept/?token=${token}`;
+  async function getAuthToken(): Promise<string | null> {
+    const { data } = await supabase().auth.getSession();
+    return data.session?.access_token ?? null;
   }
 
-  async function copyAcceptLink() {
-    const link = await getOrCreateAcceptLink();
-    await navigator.clipboard.writeText(link);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
+  async function handleEmailLink() {
+    if (!quote) return;
+    setEmailLinkSending(true);
+    try {
+      const token = await getAuthToken();
+      const res = await fetch("/api/email/send-quote-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ quoteId: quote.id, recipientEmail: emailLinkAddress || undefined }),
+      });
+      const data = await res.json() as { ok?: boolean; error?: string; recipient?: string };
+      if (!res.ok || !data.ok) { toast.error(data.error ?? "Failed to send email"); return; }
+      toast.success(`Sent to ${data.recipient}`);
+      setEmailLinkModal(false);
+      loadQuote();
+    } catch {
+      toast.error("Failed to send email");
+    } finally {
+      setEmailLinkSending(false);
+    }
   }
+
 
   async function loadNotes() {
     const { data, error } = await supabase()
@@ -310,222 +330,6 @@ function QuoteDetailContent() {
     setPhotos((data as ProjectPhoto[]) ?? []);
   }
 
-  async function updateStatus(status: string) {
-    setUpdating(true);
-    await supabase()
-      .from("quotes")
-      .update({ status, ...(status === "SENT" ? { sent_at: new Date().toISOString() } : {}), ...(status === "ACCEPTED" ? { accepted_at: new Date().toISOString() } : {}) })
-      .eq("id", quoteId!);
-
-    // GHL opportunity sync — fire-and-forget, never blocks UI
-    if (status === "SENT" || status === "ACCEPTED") {
-      (async () => {
-        try {
-          const { data: cfg } = await supabase()
-            .from("company_settings")
-            .select("ghl_pipeline_id, ghl_sent_stage_id, ghl_won_stage_id")
-            .limit(1)
-            .maybeSingle();
-
-          const pipelineId = (cfg as { ghl_pipeline_id?: string } | null)?.ghl_pipeline_id;
-          const sentStageId = (cfg as { ghl_sent_stage_id?: string } | null)?.ghl_sent_stage_id;
-          const wonStageId = (cfg as { ghl_won_stage_id?: string } | null)?.ghl_won_stage_id;
-
-          if (!pipelineId) return; // Not configured — skip silently
-
-          // Get account's GHL contact ID
-          const { data: acctRow } = await supabase()
-            .from("accounts")
-            .select("ghl_contact_id, name, email, phone")
-            .eq("id", (quote?.account as { id: string } | null)?.id ?? "")
-            .maybeSingle();
-
-          const acct = acctRow as { ghl_contact_id?: string | null; name: string; email?: string | null; phone?: string | null } | null;
-          let contactId = acct?.ghl_contact_id ?? null;
-
-          // If no contact synced yet, sync now
-          if (!contactId && acct) {
-            const { syncGhlContact } = await import("@/lib/ghl");
-            contactId = await syncGhlContact({ name: acct.name, email: acct.email, phone: acct.phone });
-          }
-
-          if (!contactId) return;
-
-          const { data: quoteRow } = await supabase()
-            .from("quotes")
-            .select("ghl_opportunity_id, name, total")
-            .eq("id", quoteId!)
-            .maybeSingle();
-
-          const existingOppId = (quoteRow as { ghl_opportunity_id?: string | null } | null)?.ghl_opportunity_id;
-          const quoteName = (quoteRow as { name?: string } | null)?.name ?? "Estimate";
-          const total = (quoteRow as { total?: number | null } | null)?.total ?? 0;
-
-          const { createGhlOpportunity, moveGhlOpportunityStage } = await import("@/lib/ghl");
-
-          if (status === "SENT") {
-            if (existingOppId) {
-              if (sentStageId) await moveGhlOpportunityStage(existingOppId, sentStageId);
-            } else {
-              const oppId = await createGhlOpportunity({
-                contactId,
-                title: quoteName,
-                pipelineId,
-                stageId: sentStageId ?? "",
-                monetaryValue: total,
-              });
-              if (oppId) {
-                await supabase()
-                  .from("quotes")
-                  .update({ ghl_opportunity_id: oppId, ghl_last_sync_at: new Date().toISOString() })
-                  .eq("id", quoteId!);
-              }
-            }
-          } else if (status === "ACCEPTED" && wonStageId) {
-            const oppId = existingOppId ?? await createGhlOpportunity({
-              contactId,
-              title: quoteName,
-              pipelineId,
-              stageId: wonStageId,
-              monetaryValue: total,
-            });
-            if (oppId) {
-              await moveGhlOpportunityStage(oppId, wonStageId);
-              await supabase()
-                .from("quotes")
-                .update({ ghl_opportunity_id: oppId, ghl_last_sync_at: new Date().toISOString() })
-                .eq("id", quoteId!);
-            }
-          }
-        } catch {
-          // GHL sync failure never surfaces to user
-        }
-      })();
-    }
-
-    await loadQuote();
-    setUpdating(false);
-  }
-
-  async function convertToContract() {
-    if (!quote) return;
-    setConverting(true);
-
-    try {
-      const { data: settings } = await supabase()
-        .from("company_settings")
-        .select("contract_prefix")
-        .limit(1)
-        .maybeSingle();
-      const prefix = (settings as { contract_prefix?: string } | null)?.contract_prefix ?? "RE-";
-      const contractNumber = await getNextContractNumber(prefix);
-
-      // Calculate commission values
-      const lineItems = quote.quote_line_items ?? [];
-      const sellerMarkup = lineItems
-        .reduce((sum, item) => sum + item.unit_price * item.quantity - (item.unit_cost ?? 0) * item.quantity, 0);
-      const baseProfit = lineItems
-        .reduce((sum, item) => sum + (item.unit_cost ?? 0) * item.quantity, 0);
-
-      // Insert sale
-      const { data: sale, error: saleErr } = await supabase()
-        .from("sales")
-        .insert({
-          name: contractNumber,
-          contract_number: contractNumber,
-          status: "PENDING",
-          contract_value: quote.total ?? 0,
-          subtotal: quote.subtotal,
-          discount_type: quote.discount_type,
-          discount_value: quote.discount_value,
-          discount_total: quote.discount_amount,
-          tax_rate: quote.tax_rate,
-          tax_amount: quote.tax_amount,
-          financing_provider: quote.financing_provider,
-          financing_term: quote.financing_term,
-          financing_rate: quote.financing_rate,
-          monthly_payment: quote.monthly_payment,
-          contract_date: new Date().toISOString().split("T")[0],
-          quote_id: quoteId,
-          account_id: (quote.account as { id: string } | null)?.id,
-          primary_seller_id: (quote.assigned_to as { id: string } | null)?.id ?? user?.id,
-          department_id: (quote.department as { id: string } | null)?.id,
-          cost_of_goods: baseProfit,
-          gross_profit: (quote.total ?? 0) - baseProfit,
-        })
-        .select()
-        .single();
-      if (saleErr) throw new Error(saleErr.message);
-
-      const saleId = (sale as { id: string }).id;
-
-      // Insert sale line items
-      if (lineItems.length > 0) {
-        await supabase().from("sale_line_items").insert(
-          lineItems.map((item, i) => ({
-            sale_id: saleId,
-            product_id: null,
-            product_name: item.product_name,
-            product_sku: item.product_sku ?? null,
-            quantity: item.quantity,
-            unit_price: item.unit_price,
-            unit_cost: item.unit_cost ?? null,
-            line_total: item.line_total,
-            sort_order: i,
-          }))
-        );
-      }
-
-      // Insert commission entries
-      const sellerId = (quote.assigned_to as { id: string } | null)?.id ?? user?.id;
-      if (sellerId) {
-        await supabase().from("commission_entries").insert([
-          {
-            sale_id: saleId,
-            recipient_id: sellerId,
-            amount: sellerMarkup,
-            type: "UPFRONT",
-            status: "PENDING",
-            role: "PRIMARY_SELLER",
-            created_by_id: user?.id,
-          },
-          {
-            sale_id: saleId,
-            recipient_id: sellerId,
-            amount: baseProfit * 0.18,
-            type: "UPFRONT",
-            status: "PENDING",
-            role: "MANAGER",
-            created_by_id: user?.id,
-          },
-        ]);
-      }
-
-      // Update quote status
-      await supabase()
-        .from("quotes")
-        .update({ status: "ACCEPTED", accepted_at: new Date().toISOString() })
-        .eq("id", quoteId!);
-
-      window.location.href = `/sales/detail/?id=${saleId}`;
-    } catch (err) {
-      console.error(err);
-      setConverting(false);
-    }
-  }
-
-  async function handleVizExport(dataUrl: string, colorId: string) {
-    if (!quoteId) return;
-    setVizSaving(true);
-    await supabase()
-      .from("quotes")
-      .update({ visualization_image: dataUrl, visualization_color_id: colorId })
-      .eq("id", quoteId);
-    setQuote((q) => q ? { ...q, visualization_image: dataUrl, visualization_color_id: colorId } : q);
-    setVizSaved(true);
-    setTimeout(() => setVizSaved(false), 3000);
-    setVizSaving(false);
-  }
 
   async function addNote() {
     if (!newNote.trim()) return;
@@ -539,26 +343,6 @@ function QuoteDetailContent() {
     loadNotes();
   }
 
-  async function openEditModal() {
-    if (!quote) return;
-    setEditDraft({
-      name: quote.name,
-      valid_until: quote.valid_until?.split("T")[0] ?? "",
-      status: quote.status,
-      notes: quote.notes ?? "",
-      assigned_to_id: (quote.assigned_to as { id: string } | null)?.id ?? "",
-      department_id: (quote.department as { id: string } | null)?.id ?? "",
-    });
-    if (editUsers.length === 0) {
-      const [{ data: u }, { data: d }] = await Promise.all([
-        supabase().from("users").select("id, name").order("name"),
-        supabase().from("departments").select("id, name").eq("is_active", true).order("name"),
-      ]);
-      setEditUsers((u as Array<{ id: string; name: string }>) ?? []);
-      setEditDepts((d as Array<{ id: string; name: string }>) ?? []);
-    }
-    setEditModal(true);
-  }
 
   async function handleDelete() {
     if (!quote) return;
@@ -577,29 +361,90 @@ function QuoteDetailContent() {
     window.location.href = "/quotes/";
   }
 
-  async function handleSave() {
+  async function handleClone() {
     if (!quote) return;
-    setSaving(true);
-    const { error } = await supabase()
-      .from("quotes")
-      .update({
-        name: editDraft.name.trim(),
-        valid_until: editDraft.valid_until || null,
-        status: editDraft.status,
-        notes: editDraft.notes.trim() || null,
-        assigned_to_id: editDraft.assigned_to_id || null,
-        department_id: editDraft.department_id || null,
-      })
-      .eq("id", quote.id);
-    if (error) {
-      toast.error(error.message ?? "Save failed");
-    } else {
-      toast.success("Estimate updated");
-      setEditModal(false);
-      await loadQuote();
+    setCloning(true);
+    try {
+      // Get next estimate number
+      const { data: settings } = await supabase()
+        .from("company_settings")
+        .select("estimate_prefix")
+        .limit(1)
+        .maybeSingle();
+      const prefix = (settings as { estimate_prefix?: string } | null)?.estimate_prefix ?? "EST-";
+
+      // Get next number
+      const { data: existing } = await supabase()
+        .from("quotes")
+        .select("name")
+        .ilike("name", `${prefix}%`)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      let nextNum = 1;
+      if (existing && existing.length > 0) {
+        const last = (existing[0] as { name: string }).name;
+        nextNum = (parseInt(last.replace(prefix, "")) || 0) + 1;
+      }
+      const newName = `${prefix}${String(nextNum).padStart(4, "0")}`;
+
+      // Insert cloned quote
+      const { data: newQuote, error: insertErr } = await supabase()
+        .from("quotes")
+        .insert({
+          name: newName,
+          status: "DRAFT",
+          subtotal: quote.subtotal ?? 0,
+          discount_type: quote.discount_type ?? null,
+          discount_value: quote.discount_value ?? null,
+          discount_amount: quote.discount_amount ?? null,
+          tax_rate: quote.tax_rate ?? 0.07,
+          tax_exempt: quote.tax_exempt ?? false,
+          tax_amount: quote.tax_amount ?? null,
+          total: quote.total ?? 0,
+          financing_provider: quote.financing_provider ?? null,
+          financing_term: quote.financing_term ?? null,
+          financing_rate: quote.financing_rate ?? null,
+          monthly_payment: quote.monthly_payment ?? null,
+          valid_until: quote.valid_until ?? null,
+          notes: quote.notes ?? null,
+          account_id: (quote.account as { id: string } | null)?.id ?? null,
+          department_id: (quote.department as { id: string } | null)?.id ?? null,
+          assigned_to_id: (quote.assigned_to as { id: string } | null)?.id ?? null,
+          visualization_color_id: quote.visualization_color_id ?? null,
+          folio_number: quote.folio_number ?? null,
+        })
+        .select()
+        .single();
+      if (insertErr) throw new Error(insertErr.message);
+
+      const newId = (newQuote as { id: string }).id;
+
+      // Clone line items
+      if (quote.quote_line_items && quote.quote_line_items.length > 0) {
+        const { error: liErr } = await supabase()
+          .from("quote_line_items")
+          .insert(quote.quote_line_items.map((li, i) => ({
+            quote_id: newId,
+            product_id: li.product_id ?? null,
+            product_name: li.product_name,
+            product_sku: li.product_sku ?? null,
+            quantity: li.quantity,
+            unit_price: li.unit_price,
+            unit_cost: li.unit_cost ?? null,
+            line_total: li.line_total,
+            sort_order: i,
+          })));
+        if (liErr) throw new Error(liErr.message);
+      }
+
+      toast.success("Estimate duplicated");
+      window.location.href = `/quotes/detail/?id=${newId}`;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Clone failed");
+      setCloning(false);
     }
-    setSaving(false);
   }
+
 
   if (invalidId) {
     return (
@@ -636,7 +481,7 @@ function QuoteDetailContent() {
     { key: "overview", label: "Overview" },
     { key: "photos", label: `Photos${photos.length > 0 ? ` (${photos.length})` : ""}` },
     { key: "notes", label: "Notes" },
-    { key: "visualize", label: quote.visualization_image ? "Visualize ✓" : "Visualize" },
+    { key: "visualize", label: (quote.visualizer_image_url || quote.visualization_image) ? "Visualize ✓" : "Visualize" },
   ];
 
   return (
@@ -654,56 +499,61 @@ function QuoteDetailContent() {
             <span>Customer: <span className="text-zinc-300">{(quote.account as { name?: string } | null)?.name ?? "—"}</span></span>
             <span>Valid until: <span className="text-zinc-300">{formatDate(quote.valid_until)}</span></span>
             <span>Total: <span className="text-zinc-100 font-semibold">{formatCurrency(quote.total)}</span></span>
+            {quote.tax_exempt && <Badge variant="gray">Tax Exempt</Badge>}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {/* Edit */}
-          <Button variant="secondary" onClick={openEditModal} title="Edit estimate">
-            <svg className="mr-1.5 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          {/* Edit — opens full builder (hidden on ACCEPTED) */}
+          {quote.status !== "ACCEPTED" && (
+            <a
+              href={`/quotes/builder/?id=${quote.id}`}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-700 bg-zinc-800/60 px-3 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
+              aria-label="Edit estimate in builder"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+              Edit
+            </a>
+          )}
+          {/* Duplicate */}
+          <Button variant="secondary" loading={cloning} onClick={handleClone} aria-label="Duplicate estimate">
+            <svg className="mr-1.5 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
             </svg>
-            Edit
+            Duplicate
           </Button>
-          {/* Delete */}
-          <Button variant="danger" onClick={() => setDeleteModal(true)} title="Delete estimate">
-            <svg className="mr-1.5 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-            Delete
-          </Button>
-          {/* PDF download */}
-          <Button variant="secondary" onClick={downloadPdf} title="Download PDF">
+          {/* PDF — opens preview modal with Download CTA inside */}
+          <Button variant="secondary" onClick={() => setPdfPreviewOpen(true)} aria-label="Preview and download PDF">
             <svg className="mr-1.5 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
             PDF
           </Button>
-          {/* Accept link */}
-          {(quote.status === "SENT" || quote.status === "DRAFT") && (
-            <Button variant="secondary" loading={generatingLink} onClick={copyAcceptLink}>
-              <svg className="mr-1.5 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-              </svg>
-              {copied ? "Copied!" : "Copy Accept Link"}
-            </Button>
-          )}
-          {quote.status === "DRAFT" && (
-            <Button variant="secondary" loading={updating} onClick={() => updateStatus("SENT")}>
-              Mark Sent
-            </Button>
-          )}
-          {(quote.status === "SENT" || quote.status === "DRAFT") && (
-            <Button variant="secondary" loading={updating} onClick={() => updateStatus("ACCEPTED")}>
-              Mark Accepted
-            </Button>
-          )}
-          {quote.status !== "ACCEPTED" && (
+          {/* Email — sends accept link to customer (DRAFT/SENT only) */}
+          {(quote.status === "DRAFT" || quote.status === "SENT") && (
             <Button
-              loading={converting}
-              onClick={convertToContract}
+              onClick={() => { setEmailLinkAddress(quote.account?.email ?? ""); setEmailLinkModal(true); }}
+              aria-label="Email accept link to customer"
             >
-              Convert to Contract
+              <svg className="mr-1.5 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+              Email
             </Button>
+          )}
+          {/* Delete — DRAFT only, muted style */}
+          {quote.status === "DRAFT" && (
+            <button
+              onClick={() => setDeleteModal(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-800 px-3 py-2 text-sm font-medium text-zinc-500 hover:border-red-800/60 hover:text-red-400 transition-colors"
+              aria-label="Delete estimate"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Delete
+            </button>
           )}
         </div>
       </div>
@@ -763,8 +613,17 @@ function QuoteDetailContent() {
                 </div>
               )}
               <div className="flex justify-between text-sm">
-                <span className="text-zinc-400">Tax ({((quote.tax_rate ?? 0) * 100).toFixed(1)}%)</span>
-                <span>{formatCurrency(quote.tax_amount)}</span>
+                {quote.tax_exempt ? (
+                  <>
+                    <span className="text-zinc-500">Tax (exempt)</span>
+                    <span className="text-zinc-500">$0.00</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-zinc-400">Tax ({((quote.tax_rate ?? 0) * 100).toFixed(1)}%)</span>
+                    <span>{formatCurrency(quote.tax_amount)}</span>
+                  </>
+                )}
               </div>
               <div className="border-t border-zinc-800 pt-2 flex justify-between font-semibold">
                 <span className="text-zinc-100">Total</span>
@@ -846,65 +705,92 @@ function QuoteDetailContent() {
         {activeTab === "visualize" && (
           <div className="p-6 space-y-5">
             <div>
-              <h3 className="text-sm font-semibold text-zinc-300 mb-1">Roof Color Visualizer</h3>
+              <h3 className="text-sm font-semibold text-zinc-300 mb-1">Roof Visualization</h3>
               <p className="text-xs text-zinc-500">
-                Upload a house photo, draw a polygon over the roof, and preview metal color options.
-                Save to attach the visualization to this quote and include it in the PDF.
+                AI-generated render and selected roof color for this estimate.
+                To regenerate or change the color, open the estimate in the builder.
               </p>
             </div>
 
-            {vizSaved && (
-              <div className="rounded-lg border border-emerald-800/40 bg-emerald-950/20 px-3 py-2 text-xs text-emerald-400">
-                Visualization saved to quote — will appear in the PDF export.
+            {/* Roof color swatch */}
+            {quote.roof_color && (
+              <div className="flex items-center gap-3">
+                {(() => {
+                  // Inline hex lookup to avoid async import in render
+                  const COLOR_MAP: Record<string, string> = {
+                    "Matte Black": "#1C1C1C",
+                    "Charcoal Gray": "#3F3F3F",
+                    "Mansard Brown": "#5C4033",
+                    "Dark Bronze": "#3D2B1F",
+                    "Dove Gray": "#8A8785",
+                    "Slate Gray": "#6A7280",
+                    "Bone White": "#E8E3D7",
+                    "Terracotta": "#C87941",
+                    "Classic White": "#F0EBE3",
+                    "Patina Green": "#4A7C6B",
+                    "Colonial Red": "#8B2020",
+                    "Forest Green": "#2D5016",
+                    "Royal Blue": "#1A3A6B",
+                    "Burnished Slate": "#5A6472",
+                    "Weathered Zinc": "#7A8490",
+                    "Copper Patina": "#6B8E7A",
+                    "Aged Bronze": "#5C4A2A",
+                  };
+                  const hex = COLOR_MAP[quote.roof_color!] ?? "#888888";
+                  return (
+                    <>
+                      <div
+                        className="h-8 w-8 rounded-lg border border-zinc-700 flex-shrink-0"
+                        style={{ backgroundColor: hex }}
+                      />
+                      <div>
+                        <p className="text-sm font-medium text-zinc-100">{quote.roof_color}</p>
+                        <p className="text-xs text-zinc-500">Selected roof color</p>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             )}
 
-            {/* Existing saved visualization */}
-            {quote.visualization_image && !vizPhotoUrl && (
-              <div className="space-y-3">
-                <p className="text-xs text-zinc-500">Previously saved visualization:</p>
+            {/* Gemini AI render */}
+            {quote.visualizer_image_url && (
+              <div className="space-y-2">
+                <p className="text-xs text-zinc-500">AI-generated render:</p>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={quote.visualizer_image_url}
+                  alt="AI roof visualization"
+                  className="rounded-xl border border-zinc-800 max-w-full"
+                />
+              </div>
+            )}
+
+            {/* Legacy canvas render (backward compat) */}
+            {!quote.visualizer_image_url && quote.visualization_image && (
+              <div className="space-y-2">
+                <p className="text-xs text-zinc-500">Saved visualization:</p>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={quote.visualization_image}
                   alt="Saved visualization"
                   className="rounded-xl border border-zinc-800 max-w-full"
                 />
-                <button
-                  onClick={() => setVizPhotoUrl("__upload__")}
-                  className="text-xs text-brand hover:underline"
-                >
-                  Replace with new photo
-                </button>
               </div>
             )}
 
-            {/* Photo upload */}
-            {(!quote.visualization_image || vizPhotoUrl === "__upload__") && !vizPhotoUrl?.startsWith("blob:") && (
-              <label className="block w-full rounded-xl border-2 border-dashed border-zinc-700 hover:border-brand transition-colors p-8 text-center cursor-pointer">
-                <svg className="w-10 h-10 text-zinc-600 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            {!quote.visualizer_image_url && !quote.visualization_image && !quote.roof_color && (
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-8 text-center">
+                <svg className="w-10 h-10 text-zinc-700 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
-                <p className="text-sm text-zinc-400">Click to upload a house exterior photo</p>
-                <p className="text-xs text-zinc-600 mt-1">JPG or PNG — photo stays local, not uploaded to server</p>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) setVizPhotoUrl(URL.createObjectURL(file));
-                  }}
-                />
-              </label>
-            )}
-
-            {/* Canvas */}
-            {vizPhotoUrl && vizPhotoUrl.startsWith("blob:") && (
-              <PhotoVisualizerCanvas
-                imageUrl={vizPhotoUrl}
-                initialColorId={quote.visualization_color_id}
-                onExport={handleVizExport}
-              />
+                <p className="text-sm text-zinc-500">No visualization yet.</p>
+                {quote.status !== "ACCEPTED" && (
+                  <a href={`/quotes/builder/?id=${quote.id}`} className="text-xs text-brand hover:underline mt-2 inline-block">
+                    Open in builder to generate one
+                  </a>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -931,84 +817,57 @@ function QuoteDetailContent() {
         </div>
       </Modal>
 
-      {/* Edit modal */}
-      <Modal open={editModal} onClose={() => setEditModal(false)} title={`Edit ${quote.name}`} maxWidth="md">
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
-              <label htmlFor="eq-name" className="block text-xs font-medium text-zinc-400 mb-1">Name</label>
+      {/* Email Link modal */}
+      <Modal open={emailLinkModal} onClose={() => setEmailLinkModal(false)} title="Email Accept Link to Customer" maxWidth="max-w-sm">
+        {quote && (
+          <div className="space-y-4">
+            <p className="text-sm text-zinc-400">Send the accept & sign link to the customer. They&apos;ll receive an email with a button to review and sign the estimate.</p>
+            <div>
+              <label htmlFor="email-link-addr" className="block text-xs font-medium text-zinc-400 mb-1.5">Recipient email</label>
               <input
-                id="eq-name"
-                type="text"
-                className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
-                value={editDraft.name}
-                onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))}
+                id="email-link-addr"
+                type="email"
+                value={emailLinkAddress}
+                onChange={(e) => setEmailLinkAddress(e.target.value)}
+                placeholder="customer@example.com"
+                className="w-full rounded-xl border border-zinc-700 bg-zinc-800/60 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-brand/50 focus:outline-none focus:ring-1 focus:ring-brand/30"
               />
+              {!quote.account?.email && (
+                <p className="mt-1 text-xs text-amber-400">No email on customer record — enter one above or <a href={`/accounts/detail/?id=${(quote.account as { id?: string } | null)?.id}`} className="underline">add to account</a>.</p>
+              )}
             </div>
-            <div>
-              <label htmlFor="eq-valid-until" className="block text-xs font-medium text-zinc-400 mb-1">Valid Until</label>
-              <input
-                id="eq-valid-until"
-                type="date"
-                className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
-                value={editDraft.valid_until}
-                onChange={(e) => setEditDraft((d) => ({ ...d, valid_until: e.target.value }))}
-              />
+            <div className="flex justify-end gap-3">
+              <Button variant="secondary" onClick={() => setEmailLinkModal(false)}>Cancel</Button>
+              <Button loading={emailLinkSending} onClick={handleEmailLink} disabled={!emailLinkAddress.trim()}>Send Email</Button>
             </div>
-            <div>
-              <label htmlFor="eq-status" className="block text-xs font-medium text-zinc-400 mb-1">Status</label>
-              <select
-                id="eq-status"
-                className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
-                value={editDraft.status}
-                onChange={(e) => setEditDraft((d) => ({ ...d, status: e.target.value }))}
-              >
-                {["DRAFT", "SENT", "ACCEPTED", "REJECTED", "EXPIRED"].map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
+          </div>
+        )}
+      </Modal>
+
+      {/* PDF Preview modal — includes Download CTA */}
+      <Modal open={pdfPreviewOpen} onClose={() => setPdfPreviewOpen(false)} title="PDF Preview" maxWidth="max-w-4xl">
+        {quote && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-xs text-zinc-400 flex-1 min-w-0 truncate">
+                Customer view: <code className="text-zinc-300">/accept/{quote.accept_token ?? "<token>"}</code>
+              </div>
+              <Button onClick={downloadPdf} aria-label="Download PDF">
+                <svg className="mr-1.5 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Download
+              </Button>
             </div>
-            <div>
-              <label htmlFor="eq-assigned-to" className="block text-xs font-medium text-zinc-400 mb-1">Assigned To</label>
-              <select
-                id="eq-assigned-to"
-                className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
-                value={editDraft.assigned_to_id}
-                onChange={(e) => setEditDraft((d) => ({ ...d, assigned_to_id: e.target.value }))}
-              >
-                <option value="">— Unassigned —</option>
-                {editUsers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="eq-department" className="block text-xs font-medium text-zinc-400 mb-1">Department</label>
-              <select
-                id="eq-department"
-                className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
-                value={editDraft.department_id}
-                onChange={(e) => setEditDraft((d) => ({ ...d, department_id: e.target.value }))}
-              >
-                <option value="">— None —</option>
-                {editDepts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
-            </div>
-            <div className="col-span-2">
-              <label htmlFor="eq-notes" className="block text-xs font-medium text-zinc-400 mb-1">Notes</label>
-              <textarea
-                id="eq-notes"
-                rows={3}
-                className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30 placeholder:text-zinc-600"
-                placeholder="Internal notes…"
-                value={editDraft.notes}
-                onChange={(e) => setEditDraft((d) => ({ ...d, notes: e.target.value }))}
+            <div className="relative rounded-xl overflow-hidden border border-zinc-800" style={{ height: "70vh" }}>
+              <iframe
+                src={`/api/quotes/${quote.id}/pdf?v=${encodeURIComponent(quote.created_at)}`}
+                className="h-full w-full"
+                title="PDF preview"
               />
             </div>
           </div>
-          <div className="flex justify-end gap-3">
-            <Button variant="secondary" onClick={() => setEditModal(false)}>Cancel</Button>
-            <Button loading={saving} onClick={handleSave} disabled={!editDraft.name.trim()}>Save changes</Button>
-          </div>
-        </div>
+        )}
       </Modal>
     </div>
   );

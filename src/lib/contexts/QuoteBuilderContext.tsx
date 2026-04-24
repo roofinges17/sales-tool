@@ -1,6 +1,7 @@
 "use client";
 
-import React, { createContext, useContext, useState, useCallback } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
+import { supabase } from "@/lib/supabase";
 
 export interface CartItem {
   product_id: string;
@@ -58,7 +59,13 @@ export interface QuoteBuilderState {
   useFinancing: boolean;
   visualizationColorId: string | null;
   compositeImageDataUrl: string | null;
+  roofColor: string | null;
+  visualizerEnabled: boolean;
+  visualizerImageUrl: string | null;
+  visualizerColor: string | null;
+  visualizerFinish: string | null;
   folioNumber: string;
+  taxExempt: boolean;
 }
 
 export interface CommissionSummary {
@@ -81,10 +88,13 @@ interface QuoteBuilderContextValue {
   setNewCustomer: (c: Partial<NewCustomer>) => void;
   setDiscount: (type: "PERCENTAGE" | "FIXED" | null, value: number) => void;
   setTaxRate: (rate: number) => void;
+  setTaxExempt: (exempt: boolean) => void;
   setValidDays: (days: number) => void;
   setNotes: (n: string) => void;
   setFinancing: (plan: FinancingPlan | null, useFinancing: boolean) => void;
   setVisualization: (colorId: string | null, dataUrl: string | null) => void;
+  setRoofColor: (color: string | null) => void;
+  setVisualizerState: (opts: { enabled?: boolean; imageUrl?: string | null; color?: string | null; finish?: string | null }) => void;
   setFolioNumber: (folio: string) => void;
   subtotal: number;
   discountAmount: number;
@@ -94,6 +104,37 @@ interface QuoteBuilderContextValue {
   monthlyPayment: number;
   commissions: CommissionSummary;
   reset: () => void;
+  // Draft persistence
+  clearDraft: () => void;
+  hasDraft: () => boolean;
+  restoreDraft: () => boolean;
+  draftKey: string | null;
+  // Edit mode
+  editingQuoteId: string | null;
+  setEditingQuoteId: (id: string | null) => void;
+  hydrateFromQuote: (q: {
+    id: string;
+    departmentId: string | null;
+    departmentName: string | null;
+    cart: CartItem[];
+    existingAccountId: string | null;
+    existingAccountName: string | null;
+    discountType: "PERCENTAGE" | "FIXED" | null;
+    discountValue: number;
+    taxRate: number;
+    taxExempt: boolean;
+    validDays: number;
+    notes: string;
+    financingPlanId: string | null;
+    selectedFinancingPlan: FinancingPlan | null;
+    useFinancing: boolean;
+    visualizationColorId: string | null;
+    roofColor?: string | null;
+    visualizerImageUrl?: string | null;
+    visualizerColor?: string | null;
+    visualizerFinish?: string | null;
+    folioNumber: string;
+  }) => void;
 }
 
 const defaultState: QuoteBuilderState = {
@@ -124,13 +165,129 @@ const defaultState: QuoteBuilderState = {
   useFinancing: false,
   visualizationColorId: null,
   compositeImageDataUrl: null,
+  roofColor: null,
+  visualizerEnabled: false,
+  visualizerImageUrl: null,
+  visualizerColor: null,
+  visualizerFinish: null,
   folioNumber: "",
+  taxExempt: false,
 };
 
 const QuoteBuilderContext = createContext<QuoteBuilderContextValue | null>(null);
 
 export function QuoteBuilderProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<QuoteBuilderState>(defaultState);
+  const [editingQuoteId, setEditingQuoteId] = useState<string | null>(null);
+
+  // Autosave: resolve user ID
+  const [userId, setUserId] = useState<string | null>(null);
+  useEffect(() => {
+    supabase().auth.getUser().then(({ data }) => {
+      setUserId(data.user?.id ?? null);
+    });
+  }, []);
+
+  const draftKey = userId
+    ? editingQuoteId
+      ? `quoteBuilder:edit:${editingQuoteId}:${userId}`
+      : `quoteBuilder:draft:${userId}`
+    : null;
+
+  // Debounced autosave
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!draftKey || !state.departmentId) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      try {
+        const toSave: QuoteBuilderState = { ...state, compositeImageDataUrl: null, visualizerImageUrl: null };
+        const serialized = JSON.stringify(toSave);
+        if (serialized.length > 1_000_000) return;
+        localStorage.setItem(draftKey, serialized);
+      } catch {
+        // QuotaExceededError — ignore
+      }
+    }, 500);
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, [state, draftKey]);
+
+  const clearDraft = useCallback(() => {
+    if (draftKey) localStorage.removeItem(draftKey);
+  }, [draftKey]);
+
+  const hasDraft = useCallback((): boolean => {
+    if (!draftKey) return false;
+    return localStorage.getItem(draftKey) !== null;
+  }, [draftKey]);
+
+  const restoreDraft = useCallback((): boolean => {
+    if (!draftKey) return false;
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (!raw) return false;
+      const saved = JSON.parse(raw) as QuoteBuilderState;
+      setState(saved);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [draftKey]);
+
+  const hydrateFromQuote = useCallback((q: {
+    id: string;
+    departmentId: string | null;
+    departmentName: string | null;
+    cart: CartItem[];
+    existingAccountId: string | null;
+    existingAccountName: string | null;
+    discountType: "PERCENTAGE" | "FIXED" | null;
+    discountValue: number;
+    taxRate: number;
+    taxExempt: boolean;
+    validDays: number;
+    notes: string;
+    financingPlanId: string | null;
+    selectedFinancingPlan: FinancingPlan | null;
+    useFinancing: boolean;
+    visualizationColorId: string | null;
+    roofColor?: string | null;
+    visualizerImageUrl?: string | null;
+    visualizerColor?: string | null;
+    visualizerFinish?: string | null;
+    folioNumber: string;
+  }) => {
+    setEditingQuoteId(q.id);
+    setState({
+      ...defaultState,
+      step: 1,
+      departmentId: q.departmentId,
+      departmentName: q.departmentName,
+      cart: q.cart,
+      existingAccountId: q.existingAccountId,
+      existingAccountName: q.existingAccountName,
+      isNewCustomer: false,
+      discountType: q.discountType,
+      discountValue: q.discountValue,
+      taxRate: q.taxRate,
+      taxExempt: q.taxExempt,
+      validDays: q.validDays,
+      notes: q.notes,
+      financingPlanId: q.financingPlanId,
+      selectedFinancingPlan: q.selectedFinancingPlan,
+      useFinancing: q.useFinancing,
+      visualizationColorId: q.visualizationColorId,
+      compositeImageDataUrl: null,
+      roofColor: q.roofColor ?? null,
+      visualizerEnabled: false,
+      visualizerImageUrl: q.visualizerImageUrl ?? null,
+      visualizerColor: q.visualizerColor ?? null,
+      visualizerFinish: q.visualizerFinish ?? null,
+      folioNumber: q.folioNumber,
+    });
+  }, []);
 
   const setStep = useCallback((step: number) => setState((s) => ({ ...s, step })), []);
 
@@ -207,6 +364,10 @@ export function QuoteBuilderProvider({ children }: { children: React.ReactNode }
     setState((s) => ({ ...s, taxRate: rate }));
   }, []);
 
+  const setTaxExempt = useCallback((exempt: boolean) => {
+    setState((s) => ({ ...s, taxExempt: exempt }));
+  }, []);
+
   const setValidDays = useCallback((days: number) => {
     setState((s) => ({ ...s, validDays: days }));
   }, []);
@@ -228,11 +389,31 @@ export function QuoteBuilderProvider({ children }: { children: React.ReactNode }
     setState((s) => ({ ...s, visualizationColorId: colorId, compositeImageDataUrl: dataUrl }));
   }, []);
 
+  const setRoofColor = useCallback((color: string | null) => {
+    setState((s) => ({ ...s, roofColor: color }));
+  }, []);
+
+  const setVisualizerState = useCallback(
+    (opts: { enabled?: boolean; imageUrl?: string | null; color?: string | null; finish?: string | null }) => {
+      setState((s) => ({
+        ...s,
+        ...(opts.enabled !== undefined ? { visualizerEnabled: opts.enabled } : {}),
+        ...(opts.imageUrl !== undefined ? { visualizerImageUrl: opts.imageUrl } : {}),
+        ...(opts.color !== undefined ? { visualizerColor: opts.color } : {}),
+        ...(opts.finish !== undefined ? { visualizerFinish: opts.finish } : {}),
+      }));
+    },
+    [],
+  );
+
   const setFolioNumber = useCallback((folio: string) => {
     setState((s) => ({ ...s, folioNumber: folio }));
   }, []);
 
-  const reset = useCallback(() => setState(defaultState), []);
+  const reset = useCallback(() => {
+    setState(defaultState);
+    setEditingQuoteId(null);
+  }, []);
 
   // Computed values
   const subtotal = state.cart.reduce((sum, item) => sum + item.line_total, 0);
@@ -250,7 +431,7 @@ export function QuoteBuilderProvider({ children }: { children: React.ReactNode }
       : 0;
 
   const afterDiscount = subtotal - discountAmount + dealerFee;
-  const taxAmount = afterDiscount * state.taxRate;
+  const taxAmount = state.taxExempt ? 0 : afterDiscount * state.taxRate;
   const total = afterDiscount + taxAmount;
 
   // Monthly payment: P × r(1+r)^n / ((1+r)^n - 1)
@@ -294,10 +475,13 @@ export function QuoteBuilderProvider({ children }: { children: React.ReactNode }
     setNewCustomer,
     setDiscount,
     setTaxRate,
+    setTaxExempt,
     setValidDays,
     setNotes,
     setFinancing,
     setVisualization,
+    setRoofColor,
+    setVisualizerState,
     setFolioNumber,
     subtotal,
     discountAmount,
@@ -307,6 +491,13 @@ export function QuoteBuilderProvider({ children }: { children: React.ReactNode }
     monthlyPayment,
     commissions,
     reset,
+    clearDraft,
+    hasDraft,
+    restoreDraft,
+    draftKey,
+    editingQuoteId,
+    setEditingQuoteId,
+    hydrateFromQuote,
   };
 
   return <QuoteBuilderContext.Provider value={value}>{children}</QuoteBuilderContext.Provider>;

@@ -9,14 +9,15 @@ type SignMode = "electronic" | "manual";
 interface QuoteRow {
   id: string;
   name: string;
-  estimate_number: string;
-  total_amount: number;
+  total: number;
   status: string;
   accepted_at: string | null;
   signed_at: string | null;
   customer_signature_data_url: string | null;
   accept_token: string | null;
-  accounts?: { name: string } | null | { name: string }[];
+  roof_color?: string | null;
+  visualizer_image_url?: string | null;
+  account?: { name: string } | null;
 }
 
 function formatCurrency(n: number) {
@@ -159,6 +160,7 @@ export default function AcceptPage() {
   const [signMode, setSignMode] = useState<SignMode>("electronic");
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [emailSentTo, setEmailSentTo] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -172,7 +174,7 @@ export default function AcceptPage() {
 
       const { data, error } = await supabase()
         .from("quotes")
-        .select("id, name, estimate_number, total_amount, status, accepted_at, signed_at, customer_signature_data_url, accept_token, accounts(name)")
+        .select("id, name, total, status, accepted_at, signed_at, customer_signature_data_url, accept_token, roof_color, visualizer_image_url, account:account_id(name)")
         .eq("accept_token", token)
         .maybeSingle();
 
@@ -213,7 +215,7 @@ export default function AcceptPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const json = (await res.json()) as { ok?: boolean; error?: string; alreadyAccepted?: boolean };
+      const json = (await res.json()) as { ok?: boolean; error?: string; alreadyAccepted?: boolean; emails?: { customer: string; rep: string } };
 
       if (!res.ok || !json.ok) {
         throw new Error(json.error ?? "Failed to record acceptance");
@@ -225,6 +227,7 @@ export default function AcceptPage() {
         accepted_at: now,
         ...(body.signatureDataUrl ? { customer_signature_data_url: body.signatureDataUrl, signed_at: now } : {}),
       });
+      setEmailSentTo(json.emails?.customer === "sent" ? "sent" : null);
       setStatus("success");
     } catch (err) {
       setStatus("error");
@@ -234,9 +237,7 @@ export default function AcceptPage() {
     }
   }
 
-  const customerName = quote?.accounts && !Array.isArray(quote.accounts)
-    ? (quote.accounts as { name: string }).name
-    : null;
+  const customerName = quote?.account?.name ?? null;
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-950 px-4 py-8">
@@ -274,7 +275,7 @@ export default function AcceptPage() {
                 <div className="mt-4 space-y-2 rounded-xl border border-zinc-800 bg-zinc-950/50 p-4">
                   <div className="flex justify-between text-sm">
                     <span className="text-zinc-500">Estimate</span>
-                    <span className="font-medium text-zinc-200">{quote.estimate_number}</span>
+                    <span className="font-medium text-zinc-200">{quote.name}</span>
                   </div>
                   {customerName && (
                     <div className="flex justify-between text-sm">
@@ -284,10 +285,41 @@ export default function AcceptPage() {
                   )}
                   <div className="flex justify-between text-sm border-t border-zinc-800 pt-2 mt-2">
                     <span className="text-zinc-400 font-medium">Total</span>
-                    <span className="text-lg font-bold text-zinc-50">{formatCurrency(quote.total_amount)}</span>
+                    <span className="text-lg font-bold text-zinc-50">{formatCurrency(quote.total)}</span>
                   </div>
                 </div>
               </div>
+
+              {/* AI Render — shown if visualizer was used */}
+              {quote.visualizer_image_url && (
+                <div className="p-6 pb-0">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">
+                    Your Home with the Proposed Roof
+                  </p>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={quote.visualizer_image_url}
+                    alt="AI roof render"
+                    className="w-full rounded-xl border border-zinc-700 object-cover"
+                  />
+                </div>
+              )}
+
+              {/* Roof Color — shown when a color was selected */}
+              {quote.roof_color && (
+                <div className="px-6 pt-4">
+                  <div className="rounded-xl border border-zinc-700 bg-zinc-950/40 px-4 py-3 space-y-1">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Roof Color</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="h-5 w-5 rounded border border-zinc-600 bg-zinc-700" />
+                      <span className="text-sm font-semibold text-zinc-100">{quote.roof_color}</span>
+                    </div>
+                    <p className="text-xs text-zinc-500 mt-1">
+                      By signing below, you confirm the roof color and material specifications above.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Signature section */}
               <div className="p-6 space-y-5">
@@ -386,7 +418,7 @@ export default function AcceptPage() {
                 <div className="rounded-xl border border-zinc-800 bg-zinc-950/50 p-4 text-left">
                   <div className="flex justify-between text-sm">
                     <span className="text-zinc-500">Estimate</span>
-                    <span className="font-medium text-zinc-200">{quote.estimate_number}</span>
+                    <span className="font-medium text-zinc-200">{quote.name}</span>
                   </div>
                   {customerName && (
                     <div className="mt-1.5 flex justify-between text-sm">
@@ -396,7 +428,7 @@ export default function AcceptPage() {
                   )}
                   <div className="mt-1.5 flex justify-between text-sm">
                     <span className="text-zinc-500">Total</span>
-                    <span className="font-bold text-zinc-50">{formatCurrency(quote.total_amount)}</span>
+                    <span className="font-bold text-zinc-50">{formatCurrency(quote.total)}</span>
                   </div>
                 </div>
               )}
@@ -417,6 +449,11 @@ export default function AcceptPage() {
               <p className="text-sm text-zinc-400">
                 Thank you! We&apos;ll be in touch shortly to schedule the next steps.
               </p>
+              {emailSentTo ? (
+                <p className="text-xs text-emerald-500">A confirmation copy was emailed to you.</p>
+              ) : (
+                <p className="text-xs text-zinc-600">Bookmark this page to access your signed copy.</p>
+              )}
               {quote?.signed_at && (
                 <p className="text-xs text-zinc-600">
                   Signed electronically · {new Date(quote.signed_at).toLocaleString()}
