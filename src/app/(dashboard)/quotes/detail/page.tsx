@@ -8,6 +8,8 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Tabs } from "@/components/ui/Tabs";
+import { Modal } from "@/components/ui/Modal";
+import { toast } from "sonner";
 import PhotoUpload from "@/components/quotes/PhotoUpload";
 import PhotoGallery, { type ProjectPhoto } from "@/components/quotes/PhotoGallery";
 import PhotoVisualizerCanvas from "@/components/quotes/PhotoVisualizerCanvas";
@@ -118,6 +120,13 @@ function QuoteDetailContent() {
   const [vizPhotoUrl, setVizPhotoUrl] = useState<string | null>(null);
   const [vizSaving, setVizSaving] = useState(false);
   const [vizSaved, setVizSaved] = useState(false);
+  const [deleteModal, setDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [editModal, setEditModal] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editDraft, setEditDraft] = useState({ name: "", valid_until: "", status: "", notes: "", assigned_to_id: "", department_id: "" });
+  const [editUsers, setEditUsers] = useState<Array<{ id: string; name: string }>>([]);
+  const [editDepts, setEditDepts] = useState<Array<{ id: string; name: string }>>([]);
 
   useEffect(() => {
     if (!quoteId) return;
@@ -526,6 +535,68 @@ function QuoteDetailContent() {
     loadNotes();
   }
 
+  async function openEditModal() {
+    if (!quote) return;
+    setEditDraft({
+      name: quote.name,
+      valid_until: quote.valid_until?.split("T")[0] ?? "",
+      status: quote.status,
+      notes: quote.notes ?? "",
+      assigned_to_id: (quote.assigned_to as { id: string } | null)?.id ?? "",
+      department_id: (quote.department as { id: string } | null)?.id ?? "",
+    });
+    if (editUsers.length === 0) {
+      const [{ data: u }, { data: d }] = await Promise.all([
+        supabase().from("users").select("id, name").order("name"),
+        supabase().from("departments").select("id, name").eq("is_active", true).order("name"),
+      ]);
+      setEditUsers((u as Array<{ id: string; name: string }>) ?? []);
+      setEditDepts((d as Array<{ id: string; name: string }>) ?? []);
+    }
+    setEditModal(true);
+  }
+
+  async function handleDelete() {
+    if (!quote) return;
+    if (quote.status === "ACCEPTED") {
+      toast.error("Cannot delete an accepted estimate — it has already been signed and accepted by the customer.");
+      setDeleteModal(false);
+      return;
+    }
+    setDeleting(true);
+    const { error } = await supabase().from("quotes").delete().eq("id", quote.id);
+    if (error) {
+      toast.error(error.message ?? "Delete failed");
+      setDeleting(false);
+      return;
+    }
+    window.location.href = "/quotes/";
+  }
+
+  async function handleSave() {
+    if (!quote) return;
+    setSaving(true);
+    const { error } = await supabase()
+      .from("quotes")
+      .update({
+        name: editDraft.name.trim(),
+        valid_until: editDraft.valid_until || null,
+        status: editDraft.status,
+        notes: editDraft.notes.trim() || null,
+        assigned_to_id: editDraft.assigned_to_id || null,
+        department_id: editDraft.department_id || null,
+      })
+      .eq("id", quote.id);
+    if (error) {
+      toast.error(error.message ?? "Save failed");
+    } else {
+      toast.success("Estimate updated");
+      setEditModal(false);
+      await loadQuote();
+    }
+    setSaving(false);
+  }
+
   if (invalidId) {
     return (
       <div className="rounded-xl border border-amber-800/50 bg-amber-950/30 px-6 py-8 text-center">
@@ -582,6 +653,20 @@ function QuoteDetailContent() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* Edit */}
+          <Button variant="secondary" onClick={openEditModal} title="Edit estimate">
+            <svg className="mr-1.5 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            Edit
+          </Button>
+          {/* Delete */}
+          <Button variant="danger" onClick={() => setDeleteModal(true)} title="Delete estimate">
+            <svg className="mr-1.5 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            Delete
+          </Button>
           {/* PDF download */}
           <Button variant="secondary" onClick={downloadPdf} title="Download PDF">
             <svg className="mr-1.5 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -820,6 +905,101 @@ function QuoteDetailContent() {
           </div>
         )}
       </Card>
+
+      {/* Delete confirmation modal */}
+      <Modal open={deleteModal} onClose={() => setDeleteModal(false)} title="Delete estimate?" maxWidth="sm">
+        <div className="space-y-4">
+          <p className="text-sm text-zinc-300">
+            Delete <span className="font-semibold text-zinc-100">{quote.name}</span> permanently? This cannot be undone.
+            All photos, line items, and notes for this estimate will also be deleted.
+          </p>
+          {quote.status === "ACCEPTED" && (
+            <div className="rounded-xl border border-amber-800/40 bg-amber-950/20 px-4 py-3 text-xs text-amber-300">
+              This estimate has been accepted — it cannot be deleted.
+            </div>
+          )}
+          <div className="flex justify-end gap-3">
+            <Button variant="secondary" onClick={() => setDeleteModal(false)}>Cancel</Button>
+            <Button variant="danger" loading={deleting} onClick={handleDelete} disabled={quote.status === "ACCEPTED"}>
+              Delete permanently
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit modal */}
+      <Modal open={editModal} onClose={() => setEditModal(false)} title={`Edit ${quote.name}`} maxWidth="md">
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-zinc-400 mb-1">Name</label>
+              <input
+                type="text"
+                className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
+                value={editDraft.name}
+                onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1">Valid Until</label>
+              <input
+                type="date"
+                className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
+                value={editDraft.valid_until}
+                onChange={(e) => setEditDraft((d) => ({ ...d, valid_until: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1">Status</label>
+              <select
+                className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
+                value={editDraft.status}
+                onChange={(e) => setEditDraft((d) => ({ ...d, status: e.target.value }))}
+              >
+                {["DRAFT", "SENT", "ACCEPTED", "REJECTED", "EXPIRED"].map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1">Assigned To</label>
+              <select
+                className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
+                value={editDraft.assigned_to_id}
+                onChange={(e) => setEditDraft((d) => ({ ...d, assigned_to_id: e.target.value }))}
+              >
+                <option value="">— Unassigned —</option>
+                {editUsers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1">Department</label>
+              <select
+                className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
+                value={editDraft.department_id}
+                onChange={(e) => setEditDraft((d) => ({ ...d, department_id: e.target.value }))}
+              >
+                <option value="">— None —</option>
+                {editDepts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-zinc-400 mb-1">Notes</label>
+              <textarea
+                rows={3}
+                className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30 placeholder:text-zinc-600"
+                placeholder="Internal notes…"
+                value={editDraft.notes}
+                onChange={(e) => setEditDraft((d) => ({ ...d, notes: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button variant="secondary" onClick={() => setEditModal(false)}>Cancel</Button>
+            <Button loading={saving} onClick={handleSave} disabled={!editDraft.name.trim()}>Save changes</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

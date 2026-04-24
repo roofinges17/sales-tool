@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Tabs } from "@/components/ui/Tabs";
 import { Modal } from "@/components/ui/Modal";
+import { toast } from "sonner";
 import { isUuid } from "@/lib/uuid";
 
 interface SaleLineItem {
@@ -121,6 +122,13 @@ function SaleDetailContent() {
   const [savingPayment, setSavingPayment] = useState(false);
   const [movingStage, setMovingStage] = useState(false);
   const [selectedStageId, setSelectedStageId] = useState("");
+  const [deleteModal, setDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [editModal, setEditModal] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editDraft, setEditDraft] = useState({ name: "", contract_date: "", status: "", notes: "", primary_seller_id: "", department_id: "" });
+  const [editUsers, setEditUsers] = useState<Array<{ id: string; name: string }>>([]);
+  const [editDepts, setEditDepts] = useState<Array<{ id: string; name: string }>>([]);
 
   useEffect(() => {
     if (!saleId) return;
@@ -204,6 +212,68 @@ function SaleDetailContent() {
     loadSale();
   }
 
+  async function openEditModal() {
+    if (!sale) return;
+    setEditDraft({
+      name: sale.name,
+      contract_date: sale.contract_date?.split("T")[0] ?? "",
+      status: sale.status,
+      notes: sale.notes ?? "",
+      primary_seller_id: (sale.primary_seller as { id: string } | null)?.id ?? "",
+      department_id: (sale.department as { id: string } | null)?.id ?? "",
+    });
+    if (editUsers.length === 0) {
+      const [{ data: u }, { data: d }] = await Promise.all([
+        supabase().from("users").select("id, name").order("name"),
+        supabase().from("departments").select("id, name").eq("is_active", true).order("name"),
+      ]);
+      setEditUsers((u as Array<{ id: string; name: string }>) ?? []);
+      setEditDepts((d as Array<{ id: string; name: string }>) ?? []);
+    }
+    setEditModal(true);
+  }
+
+  async function handleDelete() {
+    if (!sale) return;
+    if (sale.status === "COMPLETED") {
+      toast.error("Cannot delete a completed contract.");
+      setDeleteModal(false);
+      return;
+    }
+    setDeleting(true);
+    const { error } = await supabase().from("sales").delete().eq("id", sale.id);
+    if (error) {
+      toast.error(error.message ?? "Delete failed");
+      setDeleting(false);
+      return;
+    }
+    window.location.href = "/sales/";
+  }
+
+  async function handleSave() {
+    if (!sale) return;
+    setSaving(true);
+    const { error } = await supabase()
+      .from("sales")
+      .update({
+        name: editDraft.name.trim(),
+        contract_date: editDraft.contract_date || null,
+        status: editDraft.status as SaleDetail["status"],
+        notes: editDraft.notes.trim() || null,
+        primary_seller_id: editDraft.primary_seller_id || null,
+        department_id: editDraft.department_id || null,
+      })
+      .eq("id", sale.id);
+    if (error) {
+      toast.error(error.message ?? "Save failed");
+    } else {
+      toast.success("Contract updated");
+      setEditModal(false);
+      await loadSale();
+    }
+    setSaving(false);
+  }
+
   if (invalidId) {
     return (
       <div className="rounded-xl border border-amber-800/50 bg-amber-950/30 px-6 py-8 text-center">
@@ -276,6 +346,20 @@ function SaleDetailContent() {
             <span>Date: <span className="text-zinc-300">{formatDate(sale.contract_date)}</span></span>
             <span>Value: <span className="text-zinc-100 font-semibold">{formatCurrency(sale.contract_value)}</span></span>
           </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="secondary" onClick={openEditModal} title="Edit contract">
+            <svg className="mr-1.5 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            Edit
+          </Button>
+          <Button variant="danger" onClick={() => setDeleteModal(true)} title="Delete contract">
+            <svg className="mr-1.5 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            Delete
+          </Button>
         </div>
       </div>
 
@@ -455,6 +539,101 @@ function SaleDetailContent() {
           </div>
         )}
       </Card>
+
+      {/* Delete confirmation modal */}
+      <Modal open={deleteModal} onClose={() => setDeleteModal(false)} title="Delete contract?" maxWidth="sm">
+        <div className="space-y-4">
+          <p className="text-sm text-zinc-300">
+            Delete <span className="font-semibold text-zinc-100">{sale.contract_number ?? sale.name}</span> permanently? This cannot be undone.
+            All payments, commission entries, and workflow history for this contract will also be deleted.
+          </p>
+          {sale.status === "COMPLETED" && (
+            <div className="rounded-xl border border-amber-800/40 bg-amber-950/20 px-4 py-3 text-xs text-amber-300">
+              This contract is marked as completed — it cannot be deleted.
+            </div>
+          )}
+          <div className="flex justify-end gap-3">
+            <Button variant="secondary" onClick={() => setDeleteModal(false)}>Cancel</Button>
+            <Button variant="danger" loading={deleting} onClick={handleDelete} disabled={sale.status === "COMPLETED"}>
+              Delete permanently
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit modal */}
+      <Modal open={editModal} onClose={() => setEditModal(false)} title={`Edit ${sale.contract_number ?? sale.name}`} maxWidth="md">
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-zinc-400 mb-1">Name</label>
+              <input
+                type="text"
+                className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
+                value={editDraft.name}
+                onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1">Contract Date</label>
+              <input
+                type="date"
+                className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
+                value={editDraft.contract_date}
+                onChange={(e) => setEditDraft((d) => ({ ...d, contract_date: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1">Status</label>
+              <select
+                className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
+                value={editDraft.status}
+                onChange={(e) => setEditDraft((d) => ({ ...d, status: e.target.value }))}
+              >
+                {["PENDING", "ACTIVE", "CANCELLED", "COMPLETED"].map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1">Primary Seller</label>
+              <select
+                className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
+                value={editDraft.primary_seller_id}
+                onChange={(e) => setEditDraft((d) => ({ ...d, primary_seller_id: e.target.value }))}
+              >
+                <option value="">— Unassigned —</option>
+                {editUsers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1">Department</label>
+              <select
+                className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
+                value={editDraft.department_id}
+                onChange={(e) => setEditDraft((d) => ({ ...d, department_id: e.target.value }))}
+              >
+                <option value="">— None —</option>
+                {editDepts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-zinc-400 mb-1">Notes</label>
+              <textarea
+                rows={3}
+                className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30 placeholder:text-zinc-600"
+                placeholder="Internal notes…"
+                value={editDraft.notes}
+                onChange={(e) => setEditDraft((d) => ({ ...d, notes: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button variant="secondary" onClick={() => setEditModal(false)}>Cancel</Button>
+            <Button loading={saving} onClick={handleSave} disabled={!editDraft.name.trim()}>Save changes</Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Payment Modal */}
       <Modal open={paymentModal} onClose={() => setPaymentModal(false)} title="Add Payment">

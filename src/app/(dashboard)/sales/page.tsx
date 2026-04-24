@@ -9,6 +9,8 @@ import { Tabs } from "@/components/ui/Tabs";
 import { Table } from "@/components/ui/Table";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { Modal } from "@/components/ui/Modal";
+import { toast } from "sonner";
 import type { Column } from "@/components/ui/Table";
 
 interface Sale {
@@ -65,6 +67,8 @@ export default function SalesPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("all");
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Sale | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     loadAll();
@@ -82,6 +86,25 @@ export default function SalesPage() {
     setSales((s as Sale[]) ?? []);
     setDepartments((depts as Department[]) ?? []);
     setLoading(false);
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    if (deleteTarget.status === "COMPLETED") {
+      toast.error("Cannot delete a completed contract.");
+      setDeleteTarget(null);
+      return;
+    }
+    setDeleting(true);
+    const { error } = await supabase().from("sales").delete().eq("id", deleteTarget.id);
+    if (error) {
+      toast.error(error.message ?? "Delete failed");
+    } else {
+      setSales((prev) => prev.filter((s) => s.id !== deleteTarget.id));
+      toast.success(`${deleteTarget.contract_number ?? deleteTarget.name} deleted`);
+      setDeleteTarget(null);
+    }
+    setDeleting(false);
   }
 
   const filtered = sales.filter((s) => {
@@ -177,6 +200,21 @@ export default function SalesPage() {
         );
       },
     },
+    {
+      key: "actions",
+      header: "",
+      render: (row) => (
+        <button
+          onClick={(e) => { e.stopPropagation(); setDeleteTarget(row); }}
+          className="p-1.5 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-red-400/10 transition-colors"
+          title="Delete contract"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
+      ),
+    },
   ];
 
   return (
@@ -239,6 +277,28 @@ export default function SalesPage() {
           {filtered.length} of {sales.length} contracts
         </div>
       </Card>
+
+      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete contract?" maxWidth="sm">
+        {deleteTarget && (
+          <div className="space-y-4">
+            <p className="text-sm text-zinc-300">
+              Delete <span className="font-semibold text-zinc-100">{deleteTarget.contract_number ?? deleteTarget.name}</span> permanently? This cannot be undone.
+              All payments, commission entries, and workflow history for this contract will also be deleted.
+            </p>
+            {deleteTarget.status === "COMPLETED" && (
+              <div className="rounded-xl border border-amber-800/40 bg-amber-950/20 px-4 py-3 text-xs text-amber-300">
+                This contract is marked as completed — it cannot be deleted.
+              </div>
+            )}
+            <div className="flex justify-end gap-3">
+              <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+              <Button variant="danger" loading={deleting} onClick={handleDelete} disabled={deleteTarget.status === "COMPLETED"}>
+                Delete permanently
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
