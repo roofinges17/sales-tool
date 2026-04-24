@@ -240,7 +240,7 @@ export default function AccountsPage() {
           loading={loading}
           keyExtractor={(r) => r.id}
           onRowClick={(row) => { window.location.href = `/accounts/detail/?id=${row.id}`; }}
-          emptyMessage="No customers found. Try adjusting your filters or create a new customer."
+          emptyMessage={search || typeFilter ? `No customers match "${search || typeFilter}". Try a different name or clear the filter.` : accounts.length === 0 ? "No customers yet. Click \"New Customer\" to add your first one." : "No customers in this view."}
         />
         <div className="px-6 py-3 text-xs text-zinc-500 border-t border-zinc-800">
           {filtered.length} of {accounts.length} customers

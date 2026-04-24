@@ -41,6 +41,9 @@ export default function Step6Generate() {
     commissions,
     reset,
   } = useQuoteBuilder();
+  const visualizationColorId = state.visualizationColorId;
+  const compositeImageDataUrl = state.compositeImageDataUrl;
+  const folioNumber = state.folioNumber;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -108,6 +111,9 @@ export default function Step6Generate() {
           department_id: state.departmentId,
           created_by_id: user?.id ?? null,
           assigned_to_id: user?.id ?? null,
+          visualization_color_id: visualizationColorId ?? null,
+          visualization_image: compositeImageDataUrl ?? null,
+          folio_number: folioNumber || null,
         })
         .select()
         .single();
@@ -131,6 +137,28 @@ export default function Step6Generate() {
 
       const { error: lineErr } = await supabase().from("quote_line_items").insert(lineItems);
       if (lineErr) throw new Error(lineErr.message);
+
+      // GHL contact sync — fire-and-forget, never blocks save
+      if (accountId) {
+        (async () => {
+          try {
+            const { syncGhlContact } = await import("@/lib/ghl");
+            const ghlContactId = await syncGhlContact({
+              name: state.isNewCustomer ? state.newCustomer.name : (state.existingAccountName ?? ""),
+              email: state.isNewCustomer ? state.newCustomer.email : null,
+              phone: state.isNewCustomer ? state.newCustomer.phone : null,
+            });
+            if (ghlContactId) {
+              await supabase()
+                .from("accounts")
+                .update({ ghl_contact_id: ghlContactId, ghl_last_sync_at: new Date().toISOString() })
+                .eq("id", accountId!);
+            }
+          } catch {
+            // GHL sync failure never surfaces to user
+          }
+        })();
+      }
 
       reset();
       window.location.href = `/quotes/detail/?id=${quoteId}`;
@@ -163,6 +191,9 @@ export default function Step6Generate() {
             <p className="text-sm font-medium text-zinc-300">Roofing Experts</p>
             <p className="text-xs text-zinc-500">Estimate prepared for:</p>
             <p className="text-sm font-semibold text-zinc-100 mt-0.5">{customerName || "Customer"}</p>
+            {folioNumber && (
+              <p className="text-xs text-zinc-500 mt-1">Folio: <span className="text-zinc-300 font-mono">{folioNumber}</span></p>
+            )}
           </div>
         </div>
 
@@ -172,23 +203,32 @@ export default function Step6Generate() {
             <thead>
               <tr className="border-b border-zinc-700 text-xs uppercase tracking-wider text-zinc-500">
                 <th className="pb-3 text-left">Item</th>
-                <th className="pb-3 text-center w-16">Qty</th>
+                <th className="pb-3 text-center w-20">Qty / Area</th>
                 <th className="pb-3 text-right w-28">Unit Price</th>
                 <th className="pb-3 text-right w-28">Total</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800">
-              {state.cart.map((item) => (
-                <tr key={item.product_id}>
-                  <td className="py-3">
-                    <p className="font-medium text-zinc-100">{item.product_name}</p>
-                    {item.unit && <p className="text-xs text-zinc-500">{item.unit}</p>}
-                  </td>
-                  <td className="py-3 text-center text-zinc-300">{item.quantity}</td>
-                  <td className="py-3 text-right text-zinc-300">{formatCurrency(item.unit_price)}</td>
-                  <td className="py-3 text-right font-medium text-zinc-100">{formatCurrency(item.line_total)}</td>
-                </tr>
-              ))}
+              {state.cart.map((item) => {
+                const isMeasured = item.unit === "section";
+                return (
+                  <tr key={item.product_id}>
+                    <td className="py-3">
+                      <p className="font-medium text-zinc-100">{item.product_name}</p>
+                      {item.product_description && (
+                        <p className="text-xs text-zinc-500">{item.product_description}</p>
+                      )}
+                    </td>
+                    <td className="py-3 text-center text-zinc-300">
+                      {isMeasured ? <span className="text-xs text-zinc-500">measured</span> : item.quantity}
+                    </td>
+                    <td className="py-3 text-right text-zinc-300">
+                      {isMeasured ? "—" : formatCurrency(item.unit_price)}
+                    </td>
+                    <td className="py-3 text-right font-medium text-zinc-100">{formatCurrency(item.line_total)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
 

@@ -337,26 +337,67 @@ export default function CommissionsPage() {
             </div>
 
             {/* Formula explanation */}
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4">
-              <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">How it&apos;s calculated</p>
+            <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 space-y-3">
+              <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">How it&apos;s calculated</p>
               {selectedEntry.role === "PRIMARY_SELLER" && (
-                <p className="text-xs text-zinc-400">
-                  Seller earns the markup above the minimum (redline) price per product item.
-                  <br />seller_markup = SUM(sell_price − min_price) for PRODUCT items
-                </p>
+                <div className="space-y-1.5">
+                  <p className="text-xs text-zinc-400">Seller earns the markup above the minimum (redline) price per product item.</p>
+                  <div className="rounded-lg bg-zinc-900 border border-zinc-800 divide-y divide-zinc-800 text-xs">
+                    <div className="flex justify-between px-3 py-2">
+                      <span className="text-zinc-500">Formula</span>
+                      <span className="text-zinc-400 font-mono">Σ(sell − min_price)</span>
+                    </div>
+                    <div className="flex justify-between px-3 py-2">
+                      <span className="text-zinc-500">Markup earned</span>
+                      <span className="font-semibold text-zinc-100">{formatCurrency(selectedEntry.amount)}</span>
+                    </div>
+                  </div>
+                </div>
               )}
-              {selectedEntry.role === "MANAGER" && (
-                <p className="text-xs text-zinc-400">
-                  Manager earns 18% of base profit (min_price − cost) across all items.
-                  <br />manager_commission = base_profit × 0.18
-                </p>
-              )}
-              {selectedEntry.role === "COMPANY" && (
-                <p className="text-xs text-zinc-400">
-                  Company retains 5% of base profit.
-                  <br />company_commission = base_profit × 0.05
-                </p>
-              )}
+              {selectedEntry.role === "MANAGER" && (() => {
+                const baseProfit = selectedEntry.amount / 0.18;
+                return (
+                  <div className="space-y-1.5">
+                    <p className="text-xs text-zinc-400">Manager earns 18% of base profit (min_price − cost) across all items.</p>
+                    <div className="rounded-lg bg-zinc-900 border border-zinc-800 divide-y divide-zinc-800 text-xs">
+                      <div className="flex justify-between px-3 py-2">
+                        <span className="text-zinc-500">Formula</span>
+                        <span className="text-zinc-400 font-mono">base_profit × 18%</span>
+                      </div>
+                      <div className="flex justify-between px-3 py-2">
+                        <span className="text-zinc-500">Base profit</span>
+                        <span className="text-zinc-300">{formatCurrency(baseProfit)}</span>
+                      </div>
+                      <div className="flex justify-between px-3 py-2">
+                        <span className="text-zinc-500">Manager commission (18%)</span>
+                        <span className="font-semibold text-zinc-100">{formatCurrency(selectedEntry.amount)}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+              {selectedEntry.role === "COMPANY" && (() => {
+                const baseProfit = selectedEntry.amount / 0.05;
+                return (
+                  <div className="space-y-1.5">
+                    <p className="text-xs text-zinc-400">Company retains 5% of base profit.</p>
+                    <div className="rounded-lg bg-zinc-900 border border-zinc-800 divide-y divide-zinc-800 text-xs">
+                      <div className="flex justify-between px-3 py-2">
+                        <span className="text-zinc-500">Formula</span>
+                        <span className="text-zinc-400 font-mono">base_profit × 5%</span>
+                      </div>
+                      <div className="flex justify-between px-3 py-2">
+                        <span className="text-zinc-500">Base profit</span>
+                        <span className="text-zinc-300">{formatCurrency(baseProfit)}</span>
+                      </div>
+                      <div className="flex justify-between px-3 py-2">
+                        <span className="text-zinc-500">Company cut (5%)</span>
+                        <span className="font-semibold text-zinc-100">{formatCurrency(selectedEntry.amount)}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Quick links */}

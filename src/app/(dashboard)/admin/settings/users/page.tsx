@@ -10,6 +10,7 @@ import { Select } from "@/components/ui/Select";
 import { Modal } from "@/components/ui/Modal";
 import { Table } from "@/components/ui/Table";
 import type { Column } from "@/components/ui/Table";
+import { toast } from "sonner";
 
 interface UserProfile {
   id: string;
@@ -48,8 +49,10 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
-  const [editUser, setEditUser] = useState<Partial<UserProfile & { password: string }> | null>(null);
+  const [editUser, setEditUser] = useState<Partial<UserProfile> | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -67,17 +70,32 @@ export default function UsersPage() {
   }
 
   function openNew() {
-    setEditUser({ name: "", email: "", password: "", role: "seller", status: "active", department_id: null, phone: "" });
+    setEditUser({ name: "", email: "", role: "seller", status: "active", department_id: null, phone: "" });
     setErrors({});
     setSaveError(null);
+    setDeleteConfirm(false);
     setModalOpen(true);
   }
 
   function openEdit(u: UserProfile) {
-    setEditUser({ ...u, password: "" });
+    setEditUser({ ...u });
     setErrors({});
     setSaveError(null);
+    setDeleteConfirm(false);
     setModalOpen(true);
+  }
+
+  async function handleDelete() {
+    const userId = (editUser as UserProfile)?.id;
+    if (!userId) return;
+    setDeleting(true);
+    const { error } = await supabase().from("profiles").update({ status: "deleted" }).eq("id", userId);
+    setDeleting(false);
+    if (error) { toast.error("Failed: " + error.message); return; }
+    toast.success("User deactivated");
+    setDeleteConfirm(false);
+    setModalOpen(false);
+    loadAll();
   }
 
   async function handleSave() {
@@ -85,7 +103,6 @@ export default function UsersPage() {
     const errs: Record<string, string> = {};
     if (!editUser.name?.trim()) errs.name = "Name is required";
     if (!editUser.email?.trim()) errs.email = "Email is required";
-    if (!(editUser as UserProfile).id && !editUser.password?.trim()) errs.password = "Password is required for new users";
     if (Object.keys(errs).length) { setErrors(errs); return; }
 
     setSaving(true);
@@ -101,19 +118,30 @@ export default function UsersPage() {
 
     if ((editUser as UserProfile).id) {
       // Update existing profile
-      await supabase().from("profiles").update(profilePayload).eq("id", (editUser as UserProfile).id);
+      const { error } = await supabase().from("profiles").update(profilePayload).eq("id", (editUser as UserProfile).id);
+      if (error) { toast.error("Save failed: " + error.message); setSaveError(error.message); setSaving(false); return; }
+      toast.success("Saved");
     } else {
-      // Note: In production, admin user creation requires service role key
-      // We create the profile directly — the auth user must be created via Supabase dashboard or service role
-      const { error } = await supabase().from("profiles").insert({
-        ...profilePayload,
-        email: editUser.email,
+      // Send invite email — server function uses service role key
+      const res = await fetch("/api/invite-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: editUser.email,
+          name: editUser.name,
+          role: editUser.role ?? "seller",
+          department_id: editUser.department_id || null,
+        }),
       });
-      if (error) {
-        setSaveError(error.message);
+      const json = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || json.error) {
+        const msg = json.error ?? "Invite failed";
+        toast.error(msg);
+        setSaveError(msg);
         setSaving(false);
         return;
       }
+      toast.success("Invite sent — they'll receive an email to set their password.");
     }
 
     setSaving(false);
@@ -177,10 +205,6 @@ export default function UsersPage() {
         </Button>
       </div>
 
-      <div className="rounded-xl border border-amber-800/30 bg-amber-950/20 px-4 py-3 text-sm text-amber-300">
-        New users: create auth credentials in the Supabase dashboard first. The profile record will appear here after first login, or can be pre-created below.
-      </div>
-
       <div className="max-w-xs">
         <Input
           placeholder="Search by name or email…"
@@ -193,9 +217,14 @@ export default function UsersPage() {
         <Table columns={columns} data={filtered} loading={loading} keyExtractor={(r) => r.id} onRowClick={openEdit} emptyMessage="No users found." />
       </Card>
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={(editUser as UserProfile)?.id ? "Edit User" : "Add User"}>
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={(editUser as UserProfile)?.id ? "Edit User" : "Invite User"}>
         {editUser && (
           <div className="space-y-4">
+            {!(editUser as UserProfile).id && (
+              <div className="rounded-xl border border-blue-800/30 bg-blue-950/20 px-4 py-3 text-sm text-blue-300">
+                An invite email will be sent. They'll set their own password via the link.
+              </div>
+            )}
             <Input label="Full Name *" value={editUser.name ?? ""} onChange={(e) => setEditUser((u) => ({ ...u!, name: e.target.value }))} error={errors.name} />
             <Input
               label="Email *"
@@ -205,9 +234,6 @@ export default function UsersPage() {
               error={errors.email}
               disabled={!!(editUser as UserProfile).id}
             />
-            {!(editUser as UserProfile).id && (
-              <Input label="Password *" type="password" value={(editUser as { password?: string }).password ?? ""} onChange={(e) => setEditUser((u) => ({ ...u!, password: e.target.value }))} error={errors.password} />
-            )}
             <Input label="Phone" value={editUser.phone ?? ""} onChange={(e) => setEditUser((u) => ({ ...u!, phone: e.target.value }))} />
             <Select
               label="Role"
@@ -242,9 +268,22 @@ export default function UsersPage() {
                 {saveError}
               </div>
             )}
-            <div className="flex justify-end gap-3 pt-2 border-t border-zinc-800">
-              <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
-              <Button onClick={handleSave} loading={saving}>Save</Button>
+            <div className="flex items-center justify-between pt-2 border-t border-zinc-800">
+              {(editUser as UserProfile)?.id ? (
+                deleteConfirm ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-zinc-400">Deactivate this user?</span>
+                    <Button variant="danger" loading={deleting} onClick={handleDelete}>Confirm</Button>
+                    <Button variant="secondary" onClick={() => setDeleteConfirm(false)}>Cancel</Button>
+                  </div>
+                ) : (
+                  <Button variant="danger" onClick={() => setDeleteConfirm(true)}>Deactivate</Button>
+                )
+              ) : <span />}
+              <div className="flex gap-3">
+                <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
+                <Button onClick={handleSave} loading={saving}>{(editUser as UserProfile)?.id ? "Save" : "Send Invite"}</Button>
+              </div>
             </div>
           </div>
         )}

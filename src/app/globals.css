@@ -14,6 +14,7 @@
   --text-tertiary: #71717a;
   --text-muted: #52525b;
   --accent: #3b82f6;
+  --brand: #CC2A2E;
   --status-green: #22c55e;
   --status-orange: #f97316;
   --status-red: #ef4444;
@@ -23,8 +24,45 @@
 html, body {
   background: var(--bg);
   color: var(--text-primary);
+  font-family: var(--font-body, sans-serif);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading, sans-serif);
 }
 
 * {
   box-sizing: border-box;
 }
+
+/* Google Places Autocomplete dropdown — brand override */
+.pac-container {
+  background: #18181b;
+  border: 1px solid #3f3f46;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  margin-top: 4px;
+  font-family: var(--font-body, sans-serif);
+  z-index: 9999;
+  overflow: hidden;
+}
+.pac-item {
+  padding: 8px 14px;
+  cursor: pointer;
+  color: #d4d4d8;
+  font-size: 13px;
+  border-top: 1px solid #27272a;
+}
+.pac-item:first-child { border-top: none; }
+.pac-item:hover,
+.pac-item-selected {
+  background: #27272a;
+  color: #f4f4f5;
+}
+.pac-item-query {
+  color: #f4f4f5;
+  font-size: 13px;
+}
+.pac-matched { color: #CC2A2E; font-weight: 600; }
+.pac-icon { display: none; }
+.pac-logo::after { display: none; }

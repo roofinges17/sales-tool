@@ -10,6 +10,7 @@ import { Select } from "@/components/ui/Select";
 import { Modal } from "@/components/ui/Modal";
 import { Table } from "@/components/ui/Table";
 import type { Column } from "@/components/ui/Table";
+import { toast } from "sonner";
 
 interface Department {
   id: string;
@@ -64,6 +65,8 @@ export default function ProductsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editProduct, setEditProduct] = useState<Partial<Product> | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -93,13 +96,28 @@ export default function ProductsPage() {
   function openNew() {
     setEditProduct(emptyProduct());
     setErrors({});
+    setDeleteConfirm(false);
     setModalOpen(true);
   }
 
   function openEdit(p: Product) {
     setEditProduct({ ...p });
     setErrors({});
+    setDeleteConfirm(false);
     setModalOpen(true);
+  }
+
+  async function handleDelete() {
+    const productId = (editProduct as Product)?.id;
+    if (!productId) return;
+    setDeleting(true);
+    const { error } = await supabase().from("products").delete().eq("id", productId);
+    setDeleting(false);
+    if (error) { toast.error("Delete failed: " + error.message); return; }
+    toast.success("Product deleted");
+    setDeleteConfirm(false);
+    setModalOpen(false);
+    loadAll();
   }
 
   async function handleSave() {
@@ -125,18 +143,21 @@ export default function ProductsPage() {
     };
 
     if ((editProduct as Product).id) {
-      await supabase().from("products").update(payload).eq("id", (editProduct as Product).id);
+      const { error } = await supabase().from("products").update(payload).eq("id", (editProduct as Product).id);
+      if (error) { toast.error("Save failed: " + error.message); setSaving(false); return; }
     } else {
-      await supabase().from("products").insert(payload);
+      const { error } = await supabase().from("products").insert(payload);
+      if (error) { toast.error("Save failed: " + error.message); setSaving(false); return; }
     }
-
+    toast.success("Saved");
     setSaving(false);
     setModalOpen(false);
     loadAll();
   }
 
   async function toggleActive(p: Product) {
-    await supabase().from("products").update({ is_active: !p.is_active }).eq("id", p.id);
+    const { error } = await supabase().from("products").update({ is_active: !p.is_active }).eq("id", p.id);
+    if (error) { toast.error("Update failed: " + error.message); return; }
     setProducts((prev) => prev.map((x) => x.id === p.id ? { ...x, is_active: !x.is_active } : x));
   }
 
@@ -348,11 +369,24 @@ export default function ProductsPage() {
               <span className="text-sm text-zinc-300">Active</span>
             </div>
 
-            <div className="flex justify-end gap-3 pt-2 border-t border-zinc-800">
-              <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
-              <Button onClick={handleSave} loading={saving}>
-                {saving ? "Saving…" : "Save Product"}
-              </Button>
+            <div className="flex items-center justify-between pt-2 border-t border-zinc-800">
+              {(editProduct as Product)?.id ? (
+                deleteConfirm ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-zinc-400">Delete this product?</span>
+                    <Button variant="danger" loading={deleting} onClick={handleDelete}>Confirm</Button>
+                    <Button variant="secondary" onClick={() => setDeleteConfirm(false)}>Cancel</Button>
+                  </div>
+                ) : (
+                  <Button variant="danger" onClick={() => setDeleteConfirm(true)}>Delete</Button>
+                )
+              ) : <span />}
+              <div className="flex gap-3">
+                <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
+                <Button onClick={handleSave} loading={saving}>
+                  {saving ? "Saving…" : "Save Product"}
+                </Button>
+              </div>
             </div>
           </div>
         )}

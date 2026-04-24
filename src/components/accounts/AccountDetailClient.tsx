@@ -10,6 +10,8 @@ import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { useAuth } from "@/lib/hooks/useAuth";
+import { toast } from "sonner";
 import type { Account, Contact, Property, Quote, Sale } from "@/types";
 
 type TabKey = "overview" | "contacts" | "properties" | "estimates" | "contracts";
@@ -94,6 +96,26 @@ interface PropertyFormData {
   is_primary: boolean;
 }
 
+interface AccountEditForm {
+  name: string;
+  type: string;
+  status: string;
+  email: string;
+  phone: string;
+  lead_source: string;
+  billing_address_line1: string;
+  billing_address_line2: string;
+  billing_city: string;
+  billing_state: string;
+  billing_zip: string;
+  notes: string;
+}
+
+interface LeadSourceOption {
+  value: string;
+  name: string;
+}
+
 const initialContact: ContactFormData = {
   first_name: "",
   last_name: "",
@@ -119,6 +141,7 @@ const initialProperty: PropertyFormData = {
 };
 
 export function AccountDetailClient({ id }: { id: string }) {
+  const { profile } = useAuth();
   const [account, setAccount] = useState<Account | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
@@ -126,6 +149,14 @@ export function AccountDetailClient({ id }: { id: string }) {
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  const [leadSources, setLeadSources] = useState<LeadSourceOption[]>([]);
+
+  // Edit modal
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editForm, setEditForm] = useState<AccountEditForm | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Contact modal
   const [contactModalOpen, setContactModalOpen] = useState(false);
@@ -150,19 +181,87 @@ export function AccountDetailClient({ id }: { id: string }) {
       { data: props },
       { data: qts },
       { data: sls },
+      { data: ls },
     ] = await Promise.all([
       db.from("accounts").select("*, assigned_to:assigned_to_id(id, name, email)").eq("id", id).single(),
       db.from("contacts").select("*").eq("account_id", id).order("is_primary", { ascending: false }),
       db.from("properties").select("*").eq("account_id", id).order("is_primary", { ascending: false }),
       db.from("quotes").select("*").eq("account_id", id).order("created_at", { ascending: false }),
       db.from("sales").select("*").eq("account_id", id).order("created_at", { ascending: false }),
+      db.from("lead_sources").select("name, value").eq("is_active", true).order("name"),
     ]);
     setAccount(acct as Account | null);
     setContacts((ctcts as Contact[]) ?? []);
     setProperties((props as Property[]) ?? []);
     setQuotes((qts as Quote[]) ?? []);
     setSales((sls as Sale[]) ?? []);
+    setLeadSources((ls as LeadSourceOption[]) ?? []);
     setLoading(false);
+  }
+
+  function openEditModal() {
+    if (!account) return;
+    setEditForm({
+      name: account.name ?? "",
+      type: account.type ?? "",
+      status: account.status ?? "",
+      email: account.email ?? "",
+      phone: account.phone ?? "",
+      lead_source: account.lead_source ?? "",
+      billing_address_line1: account.billing_address_line1 ?? "",
+      billing_address_line2: account.billing_address_line2 ?? "",
+      billing_city: account.billing_city ?? "",
+      billing_state: account.billing_state ?? "",
+      billing_zip: account.billing_zip ?? "",
+      notes: account.notes ?? "",
+    });
+    setDeleteConfirm(false);
+    setEditModalOpen(true);
+  }
+
+  async function handleSaveEdit() {
+    if (!editForm || !account) return;
+    if (!editForm.name.trim()) { toast.error("Name is required"); return; }
+    setSavingEdit(true);
+    const { error } = await supabase().from("accounts").update({
+      name: editForm.name.trim(),
+      type: editForm.type || null,
+      status: editForm.status || null,
+      email: editForm.email.trim() || null,
+      phone: editForm.phone.trim() || null,
+      lead_source: editForm.lead_source || null,
+      billing_address_line1: editForm.billing_address_line1.trim() || null,
+      billing_address_line2: editForm.billing_address_line2.trim() || null,
+      billing_city: editForm.billing_city.trim() || null,
+      billing_state: editForm.billing_state.trim() || null,
+      billing_zip: editForm.billing_zip.trim() || null,
+      notes: editForm.notes.trim() || null,
+    }).eq("id", account.id);
+    setSavingEdit(false);
+    if (error) { toast.error("Save failed: " + error.message); return; }
+    toast.success("Customer updated");
+    setEditModalOpen(false);
+    loadAll();
+  }
+
+  async function handleDeleteAccount() {
+    if (!account) return;
+    setDeleting(true);
+    const { count } = await supabase()
+      .from("quotes")
+      .select("*", { count: "exact", head: true })
+      .eq("account_id", account.id);
+    if (count && count > 0) {
+      toast.error(`Cannot delete: this customer has ${count} estimate${count !== 1 ? "s" : ""}. Remove them first.`);
+      setDeleting(false);
+      setDeleteConfirm(false);
+      return;
+    }
+    const { error } = await supabase().from("accounts").delete().eq("id", account.id);
+    setDeleting(false);
+    if (error) { toast.error("Delete failed: " + error.message); return; }
+    toast.success("Customer deleted");
+    window.location.href = "/accounts/";
   }
 
   async function saveContact(e: React.FormEvent) {
@@ -273,9 +372,20 @@ export function AccountDetailClient({ id }: { id: string }) {
             )}
           </div>
         </div>
-        <Button variant="secondary" onClick={() => { /* edit TODO Phase 4b */ }}>
-          Edit
-        </Button>
+        <div className="flex items-center gap-2">
+          {(profile?.role === "owner" || profile?.role === "admin") && (
+            deleteConfirm ? (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-zinc-400">Delete this customer?</span>
+                <Button variant="danger" loading={deleting} onClick={handleDeleteAccount}>Confirm</Button>
+                <Button variant="secondary" onClick={() => setDeleteConfirm(false)}>Cancel</Button>
+              </div>
+            ) : (
+              <Button variant="danger" onClick={() => setDeleteConfirm(true)}>Delete</Button>
+            )
+          )}
+          <Button variant="secondary" onClick={openEditModal}>Edit</Button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -544,6 +654,112 @@ export function AccountDetailClient({ id }: { id: string }) {
           </CardContent>
         </Card>
       )}
+
+      {/* Edit Account Modal */}
+      <Modal
+        open={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+        title="Edit Customer"
+        maxWidth="max-w-2xl"
+      >
+        {editForm && (
+          <div className="space-y-4">
+            <Input
+              label="Name *"
+              value={editForm.name}
+              onChange={(e) => setEditForm((f) => ({ ...f!, name: e.target.value }))}
+            />
+            <div className="grid grid-cols-2 gap-4">
+              <Select
+                label="Type"
+                value={editForm.type}
+                onChange={(e) => setEditForm((f) => ({ ...f!, type: e.target.value }))}
+                placeholder="Select type"
+                options={[
+                  { value: "RESIDENTIAL", label: "Residential" },
+                  { value: "COMMERCIAL", label: "Commercial" },
+                  { value: "MULTIFAMILY", label: "Multifamily" },
+                ]}
+              />
+              <Select
+                label="Status"
+                value={editForm.status}
+                onChange={(e) => setEditForm((f) => ({ ...f!, status: e.target.value }))}
+                placeholder="Select status"
+                options={[
+                  { value: "ACTIVE", label: "Active" },
+                  { value: "INACTIVE", label: "Inactive" },
+                  { value: "PROSPECT", label: "Prospect" },
+                ]}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                label="Email"
+                type="email"
+                value={editForm.email}
+                onChange={(e) => setEditForm((f) => ({ ...f!, email: e.target.value }))}
+              />
+              <Input
+                label="Phone"
+                type="tel"
+                value={editForm.phone}
+                onChange={(e) => setEditForm((f) => ({ ...f!, phone: e.target.value }))}
+              />
+            </div>
+            <Select
+              label="Lead Source"
+              value={editForm.lead_source}
+              onChange={(e) => setEditForm((f) => ({ ...f!, lead_source: e.target.value }))}
+              placeholder="No lead source"
+              options={leadSources.map((s) => ({ value: s.value, label: s.name }))}
+            />
+            <Input
+              label="Billing Address Line 1"
+              value={editForm.billing_address_line1}
+              onChange={(e) => setEditForm((f) => ({ ...f!, billing_address_line1: e.target.value }))}
+              placeholder="123 Main St"
+            />
+            <Input
+              label="Billing Address Line 2"
+              value={editForm.billing_address_line2}
+              onChange={(e) => setEditForm((f) => ({ ...f!, billing_address_line2: e.target.value }))}
+              placeholder="Apt 4B"
+            />
+            <div className="grid grid-cols-3 gap-4">
+              <Input
+                label="City"
+                value={editForm.billing_city}
+                onChange={(e) => setEditForm((f) => ({ ...f!, billing_city: e.target.value }))}
+              />
+              <Input
+                label="State"
+                value={editForm.billing_state}
+                onChange={(e) => setEditForm((f) => ({ ...f!, billing_state: e.target.value }))}
+                maxLength={2}
+              />
+              <Input
+                label="ZIP"
+                value={editForm.billing_zip}
+                onChange={(e) => setEditForm((f) => ({ ...f!, billing_zip: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-zinc-300">Notes</label>
+              <textarea
+                rows={3}
+                value={editForm.notes}
+                onChange={(e) => setEditForm((f) => ({ ...f!, notes: e.target.value }))}
+                className="mt-1.5 w-full rounded-xl border border-zinc-700 bg-zinc-950/80 px-4 py-3 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-brand focus:ring-2 focus:ring-brand/30"
+              />
+            </div>
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-zinc-800">
+              <Button type="button" variant="secondary" onClick={() => setEditModalOpen(false)}>Cancel</Button>
+              <Button loading={savingEdit} onClick={handleSaveEdit}>Save Changes</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Add Contact Modal */}
       <Modal

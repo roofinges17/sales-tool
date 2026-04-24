@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Table } from "@/components/ui/Table";
 import type { Column } from "@/components/ui/Table";
+import { toast } from "sonner";
 
 interface Department {
   id: string;
@@ -18,6 +19,8 @@ interface Department {
   color?: string | null;
   is_active: boolean;
   created_at: string;
+  ghl_location_id?: string | null;
+  ghl_api_key?: string | null;
 }
 
 const emptyDept = (): Omit<Department, "id" | "created_at"> => ({
@@ -34,6 +37,8 @@ export default function DepartmentsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editDept, setEditDept] = useState<Partial<Department> | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => { load(); }, []);
@@ -48,13 +53,38 @@ export default function DepartmentsPage() {
   function openNew() {
     setEditDept(emptyDept());
     setErrors({});
+    setDeleteConfirm(false);
     setModalOpen(true);
   }
 
   function openEdit(d: Department) {
     setEditDept({ ...d });
     setErrors({});
+    setDeleteConfirm(false);
     setModalOpen(true);
+  }
+
+  async function handleDelete() {
+    const deptId = (editDept as Department)?.id;
+    if (!deptId) return;
+    setDeleting(true);
+    const { count } = await supabase()
+      .from("profiles")
+      .select("*", { count: "exact", head: true })
+      .eq("department_id", deptId);
+    if (count && count > 0) {
+      toast.error(`Cannot delete: ${count} user${count !== 1 ? "s are" : " is"} assigned to this department.`);
+      setDeleting(false);
+      setDeleteConfirm(false);
+      return;
+    }
+    const { error } = await supabase().from("departments").delete().eq("id", deptId);
+    setDeleting(false);
+    if (error) { toast.error("Delete failed: " + error.message); return; }
+    toast.success("Department deleted");
+    setDeleteConfirm(false);
+    setModalOpen(false);
+    load();
   }
 
   async function handleSave() {
@@ -71,20 +101,26 @@ export default function DepartmentsPage() {
       description: editDept.description || null,
       color: editDept.color || null,
       is_active: editDept.is_active ?? true,
+      ghl_location_id: editDept.ghl_location_id || null,
+      ghl_api_key: editDept.ghl_api_key || null,
     };
 
     if ((editDept as Department).id) {
-      await supabase().from("departments").update(payload).eq("id", (editDept as Department).id);
+      const { error } = await supabase().from("departments").update(payload).eq("id", (editDept as Department).id);
+      if (error) { toast.error("Save failed: " + error.message); setSaving(false); return; }
     } else {
-      await supabase().from("departments").insert(payload);
+      const { error } = await supabase().from("departments").insert(payload);
+      if (error) { toast.error("Save failed: " + error.message); setSaving(false); return; }
     }
+    toast.success("Saved");
     setSaving(false);
     setModalOpen(false);
     load();
   }
 
   async function toggleActive(d: Department) {
-    await supabase().from("departments").update({ is_active: !d.is_active }).eq("id", d.id);
+    const { error } = await supabase().from("departments").update({ is_active: !d.is_active }).eq("id", d.id);
+    if (error) { toast.error("Update failed: " + error.message); return; }
     setDepartments((prev) => prev.map((x) => x.id === d.id ? { ...x, is_active: !x.is_active } : x));
   }
 
@@ -175,9 +211,39 @@ export default function DepartmentsPage() {
               </button>
               <span className="text-sm text-zinc-300">Active</span>
             </div>
-            <div className="flex justify-end gap-3 pt-2 border-t border-zinc-800">
-              <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
-              <Button onClick={handleSave} loading={saving}>Save</Button>
+            {/* GHL sub-account */}
+            <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 space-y-3">
+              <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">GoHighLevel Sub-Account</p>
+              <p className="text-xs text-zinc-500">Override the company-level GHL with a location-specific API key for this department.</p>
+              <Input
+                label="GHL Location ID"
+                placeholder="GHL location ID"
+                value={editDept.ghl_location_id ?? ""}
+                onChange={(e) => setEditDept((d) => ({ ...d!, ghl_location_id: e.target.value }))}
+              />
+              <Input
+                label="GHL API Key"
+                placeholder="Location-level API key"
+                value={editDept.ghl_api_key ?? ""}
+                onChange={(e) => setEditDept((d) => ({ ...d!, ghl_api_key: e.target.value }))}
+              />
+            </div>
+            <div className="flex items-center justify-between pt-2 border-t border-zinc-800">
+              {(editDept as Department)?.id ? (
+                deleteConfirm ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-zinc-400">Delete this department?</span>
+                    <Button variant="danger" loading={deleting} onClick={handleDelete}>Confirm</Button>
+                    <Button variant="secondary" onClick={() => setDeleteConfirm(false)}>Cancel</Button>
+                  </div>
+                ) : (
+                  <Button variant="danger" onClick={() => setDeleteConfirm(true)}>Delete</Button>
+                )
+              ) : <span />}
+              <div className="flex gap-3">
+                <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
+                <Button onClick={handleSave} loading={saving}>Save</Button>
+              </div>
             </div>
           </div>
         )}

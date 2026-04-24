@@ -161,6 +161,16 @@ export default function PipelinePage() {
             />
           </CardContent>
         </Card>
+      ) : sales.length === 0 && stages.length > 0 ? (
+        <Card>
+          <CardContent className="py-16">
+            <EmptyState
+              title="No contracts in the pipeline"
+              description="Contracts you create will appear here as Kanban cards, organized by workflow stage."
+              action={{ label: "Create an Estimate", onClick: () => { window.location.href = "/quotes/builder/"; } }}
+            />
+          </CardContent>
+        </Card>
       ) : (
         <div className="overflow-x-auto pb-4">
           <div className="flex gap-4 min-w-max">

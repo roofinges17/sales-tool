@@ -4,7 +4,7 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect } from "react";
 
-const NAV_GROUPS = [
+const NAV_GROUPS_FULL = [
   {
     label: "General",
     items: [
@@ -25,19 +25,33 @@ const NAV_GROUPS = [
   },
 ];
 
+// Managers see only the Sales section (no user/company/department management)
+const NAV_GROUPS_MANAGER = [
+  {
+    label: "Sales",
+    items: NAV_GROUPS_FULL[1].items,
+  },
+];
+
 export default function AdminSettingsLayout({ children }: { children: React.ReactNode }) {
   const { profile, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
-    if (!loading && profile && profile.role !== "owner" && profile.role !== "admin") {
-      router.replace("/");
+    if (!loading && profile) {
+      if (profile.role === "seller") {
+        router.replace("/");
+      }
     }
   }, [profile, loading, router]);
 
   if (loading) return null;
-  if (profile && profile.role !== "owner" && profile.role !== "admin") return null;
+  if (profile?.role === "seller") return null;
+
+  const navGroups = profile?.role === "owner" || profile?.role === "admin"
+    ? NAV_GROUPS_FULL
+    : NAV_GROUPS_MANAGER;
 
   const isActive = (href: string) =>
     href === "/admin/settings/"
@@ -49,7 +63,7 @@ export default function AdminSettingsLayout({ children }: { children: React.Reac
       {/* Sidebar */}
       <aside className="w-52 shrink-0">
         <div className="sticky top-24 space-y-5">
-          {NAV_GROUPS.map((group) => (
+          {navGroups.map((group) => (
             <div key={group.label}>
               <p className="mb-1.5 px-3 text-xs font-semibold uppercase tracking-wider text-zinc-500">
                 {group.label}

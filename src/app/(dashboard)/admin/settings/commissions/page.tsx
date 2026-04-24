@@ -9,6 +9,7 @@ import { Select } from "@/components/ui/Select";
 import { Modal } from "@/components/ui/Modal";
 import { Table, type Column } from "@/components/ui/Table";
 import { Badge } from "@/components/ui/Badge";
+import { toast } from "sonner";
 
 // Actual DB columns per information_schema (Phase 4 schema)
 interface CommissionPlan {
@@ -142,7 +143,8 @@ export default function CommissionPlansPage() {
     const { error: err } = isNew
       ? await supabase().from("commission_plans").insert(payload)
       : await supabase().from("commission_plans").update(payload).eq("id", editing.id);
-    if (err) { setError(err.message); setSaving(false); return; }
+    if (err) { toast.error("Save failed: " + err.message); setError(err.message); setSaving(false); return; }
+    toast.success("Saved");
     setSaving(false);
     close();
     load();
@@ -152,7 +154,7 @@ export default function CommissionPlansPage() {
     if (!editing) return;
     setSaving(true);
     const { error: err } = await supabase().from("commission_plans").delete().eq("id", editing.id);
-    if (err) { setError(err.message); setSaving(false); return; }
+    if (err) { toast.error("Update failed: " + err.message); setError(err.message); setSaving(false); return; }
     setSaving(false);
     close();
     load();

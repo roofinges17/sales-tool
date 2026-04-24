@@ -9,7 +9,7 @@ export interface Profile {
   email: string;
   name: string;
   phone?: string | null;
-  role: "owner" | "admin" | "sales_manager" | "seller" | "finance";
+  role: "owner" | "admin" | "manager" | "seller";
   department_id?: string | null;
   status: string;
 }

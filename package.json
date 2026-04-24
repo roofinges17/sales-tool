@@ -10,12 +10,14 @@
     "deploy": "./scripts/deploy.sh"
   },
   "dependencies": {
+    "@googlemaps/js-api-loader": "^2.0.2",
     "@heroicons/react": "^2.1.5",
     "@supabase/supabase-js": "^2.45.0",
     "jspdf": "^4.2.1",
     "next": "15.1.3",
     "react": "19.0.0",
-    "react-dom": "19.0.0"
+    "react-dom": "19.0.0",
+    "sonner": "^2.0.7"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

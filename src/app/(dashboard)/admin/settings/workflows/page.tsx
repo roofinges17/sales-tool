@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { toast } from "sonner";
 
 interface Department {
   id: string;
@@ -87,11 +88,13 @@ export default function WorkflowsPage() {
     const dept = departments.find((d) => d.id === selectedDeptId);
     if (!dept) return;
     setSaving(true);
-    const { data } = await supabase()
+    const { data, error } = await supabase()
       .from("workflow_templates")
       .insert({ name: `${dept.name} Workflow`, department_id: selectedDeptId, is_active: true })
       .select()
       .single();
+    if (error) { toast.error("Save failed: " + error.message); setSaving(false); return; }
+    toast.success("Saved");
     setTemplate(data as WorkflowTemplate);
     setSaving(false);
   }
@@ -100,7 +103,7 @@ export default function WorkflowsPage() {
     if (!newStageName.trim() || !template) return;
     setSaving(true);
     const newOrder = stages.length;
-    const { data } = await supabase()
+    const { data, error } = await supabase()
       .from("workflow_stages")
       .insert({
         template_id: template.id,
@@ -112,18 +115,22 @@ export default function WorkflowsPage() {
       })
       .select()
       .single();
+    if (error) { toast.error("Save failed: " + error.message); setSaving(false); return; }
+    toast.success("Saved");
     setStages((prev) => [...prev, data as WorkflowStage]);
     setNewStageName("");
     setSaving(false);
   }
 
   async function updateStage(stage: WorkflowStage, updates: Partial<WorkflowStage>) {
-    await supabase().from("workflow_stages").update(updates).eq("id", stage.id);
+    const { error } = await supabase().from("workflow_stages").update(updates).eq("id", stage.id);
+    if (error) { toast.error("Update failed: " + error.message); return; }
     setStages((prev) => prev.map((s) => s.id === stage.id ? { ...s, ...updates } : s));
   }
 
   async function deleteStage(stageId: string) {
-    await supabase().from("workflow_stages").delete().eq("id", stageId);
+    const { error } = await supabase().from("workflow_stages").delete().eq("id", stageId);
+    if (error) { toast.error("Update failed: " + error.message); return; }
     setStages((prev) => prev.filter((s) => s.id !== stageId));
   }
 

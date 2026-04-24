@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Table } from "@/components/ui/Table";
 import type { Column } from "@/components/ui/Table";
+import { toast } from "sonner";
 
 interface FinancingPlan {
   id: string;
@@ -38,6 +39,8 @@ export default function FinancingPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editPlan, setEditPlan] = useState<Partial<FinancingPlan> | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => { load(); }, []);
@@ -52,13 +55,28 @@ export default function FinancingPage() {
   function openNew() {
     setEditPlan(emptyPlan());
     setErrors({});
+    setDeleteConfirm(false);
     setModalOpen(true);
   }
 
   function openEdit(p: FinancingPlan) {
     setEditPlan({ ...p });
     setErrors({});
+    setDeleteConfirm(false);
     setModalOpen(true);
+  }
+
+  async function handleDelete() {
+    const planId = (editPlan as FinancingPlan)?.id;
+    if (!planId) return;
+    setDeleting(true);
+    const { error } = await supabase().from("financing_plans").delete().eq("id", planId);
+    setDeleting(false);
+    if (error) { toast.error("Delete failed: " + error.message); return; }
+    toast.success("Financing plan deleted");
+    setDeleteConfirm(false);
+    setModalOpen(false);
+    load();
   }
 
   async function handleSave() {
@@ -81,17 +99,21 @@ export default function FinancingPage() {
     };
 
     if ((editPlan as FinancingPlan).id) {
-      await supabase().from("financing_plans").update(payload).eq("id", (editPlan as FinancingPlan).id);
+      const { error } = await supabase().from("financing_plans").update(payload).eq("id", (editPlan as FinancingPlan).id);
+      if (error) { toast.error("Save failed: " + error.message); setSaving(false); return; }
     } else {
-      await supabase().from("financing_plans").insert(payload);
+      const { error } = await supabase().from("financing_plans").insert(payload);
+      if (error) { toast.error("Save failed: " + error.message); setSaving(false); return; }
     }
+    toast.success("Saved");
     setSaving(false);
     setModalOpen(false);
     load();
   }
 
   async function toggleActive(p: FinancingPlan) {
-    await supabase().from("financing_plans").update({ is_active: !p.is_active }).eq("id", p.id);
+    const { error } = await supabase().from("financing_plans").update({ is_active: !p.is_active }).eq("id", p.id);
+    if (error) { toast.error("Update failed: " + error.message); return; }
     setPlans((prev) => prev.map((x) => x.id === p.id ? { ...x, is_active: !x.is_active } : x));
   }
 
@@ -179,9 +201,22 @@ export default function FinancingPage() {
               </button>
               <span className="text-sm text-zinc-300">Active</span>
             </div>
-            <div className="flex justify-end gap-3 pt-2 border-t border-zinc-800">
-              <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
-              <Button onClick={handleSave} loading={saving}>Save</Button>
+            <div className="flex items-center justify-between pt-2 border-t border-zinc-800">
+              {(editPlan as FinancingPlan)?.id ? (
+                deleteConfirm ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-zinc-400">Delete this plan?</span>
+                    <Button variant="danger" loading={deleting} onClick={handleDelete}>Confirm</Button>
+                    <Button variant="secondary" onClick={() => setDeleteConfirm(false)}>Cancel</Button>
+                  </div>
+                ) : (
+                  <Button variant="danger" onClick={() => setDeleteConfirm(true)}>Delete</Button>
+                )
+              ) : <span />}
+              <div className="flex gap-3">
+                <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
+                <Button onClick={handleSave} loading={saving}>Save</Button>
+              </div>
             </div>
           </div>
         )}

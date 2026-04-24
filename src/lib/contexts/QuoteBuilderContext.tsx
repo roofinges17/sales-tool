@@ -16,6 +16,7 @@ export interface CartItem {
   product_type: "PRODUCT" | "SERVICE";
   unit?: string | null;
   line_total: number;
+  is_manual_qty?: boolean;
 }
 
 export interface NewCustomer {
@@ -55,6 +56,9 @@ export interface QuoteBuilderState {
   financingPlanId: string | null;
   selectedFinancingPlan: FinancingPlan | null;
   useFinancing: boolean;
+  visualizationColorId: string | null;
+  compositeImageDataUrl: string | null;
+  folioNumber: string;
 }
 
 export interface CommissionSummary {
@@ -80,6 +84,8 @@ interface QuoteBuilderContextValue {
   setValidDays: (days: number) => void;
   setNotes: (n: string) => void;
   setFinancing: (plan: FinancingPlan | null, useFinancing: boolean) => void;
+  setVisualization: (colorId: string | null, dataUrl: string | null) => void;
+  setFolioNumber: (folio: string) => void;
   subtotal: number;
   discountAmount: number;
   dealerFee: number;
@@ -116,6 +122,9 @@ const defaultState: QuoteBuilderState = {
   financingPlanId: null,
   selectedFinancingPlan: null,
   useFinancing: false,
+  visualizationColorId: null,
+  compositeImageDataUrl: null,
+  folioNumber: "",
 };
 
 const QuoteBuilderContext = createContext<QuoteBuilderContextValue | null>(null);
@@ -215,6 +224,14 @@ export function QuoteBuilderProvider({ children }: { children: React.ReactNode }
     }));
   }, []);
 
+  const setVisualization = useCallback((colorId: string | null, dataUrl: string | null) => {
+    setState((s) => ({ ...s, visualizationColorId: colorId, compositeImageDataUrl: dataUrl }));
+  }, []);
+
+  const setFolioNumber = useCallback((folio: string) => {
+    setState((s) => ({ ...s, folioNumber: folio }));
+  }, []);
+
   const reset = useCallback(() => setState(defaultState), []);
 
   // Computed values
@@ -280,6 +297,8 @@ export function QuoteBuilderProvider({ children }: { children: React.ReactNode }
     setValidDays,
     setNotes,
     setFinancing,
+    setVisualization,
+    setFolioNumber,
     subtotal,
     discountAmount,
     dealerFee,

@@ -5,11 +5,14 @@ import { supabase } from "@/lib/supabase";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { toast } from "sonner";
+import type { GhlPipeline } from "@/lib/ghl";
 
 interface CompanySettings {
   id?: string;
   company_name?: string;
   legal_name?: string;
+  license_number?: string;
   email?: string;
   phone?: string;
   website?: string;
@@ -20,12 +23,16 @@ interface CompanySettings {
   contract_prefix?: string;
   estimate_prefix?: string;
   terms_and_conditions?: string;
+  ghl_pipeline_id?: string;
+  ghl_sent_stage_id?: string;
+  ghl_won_stage_id?: string;
 }
 
 export default function AdminSettingsPage() {
   const [settings, setSettings] = useState<CompanySettings>({
     company_name: "",
     legal_name: "",
+    license_number: "",
     email: "",
     phone: "",
     website: "",
@@ -36,10 +43,16 @@ export default function AdminSettingsPage() {
     contract_prefix: "RE-",
     estimate_prefix: "EST-",
     terms_and_conditions: "",
+    ghl_pipeline_id: "",
+    ghl_sent_stage_id: "",
+    ghl_won_stage_id: "",
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [ghlPipelines, setGhlPipelines] = useState<GhlPipeline[] | null>(null);
+  const [ghlLoadError, setGhlLoadError] = useState<string | null>(null);
+  const [ghlLoading, setGhlLoading] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -59,16 +72,29 @@ export default function AdminSettingsPage() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    const payload = { ...settings };
-    if (settings.id) {
-      await supabase().from("company_settings").update(payload).eq("id", settings.id);
-    } else {
-      const { data } = await supabase().from("company_settings").insert(payload).select().single();
-      if (data) setSettings(data);
-    }
+    // Strip id from the write payload — send it separately for upsert conflict resolution
+    const { id, ...fields } = settings;
+    const { data, error } = await supabase()
+      .from("company_settings")
+      .upsert(id ? { id, ...fields } : fields, { onConflict: "id" })
+      .select()
+      .single();
+    if (error) { toast.error("Save failed: " + error.message); setSaving(false); return; }
+    if (data) setSettings(data as CompanySettings);
     setSaving(false);
     setSaved(true);
+    toast.success("Settings saved");
     setTimeout(() => setSaved(false), 3000);
+  }
+
+  async function loadGhlPipelines() {
+    setGhlLoading(true);
+    setGhlLoadError(null);
+    const { fetchGhlPipelines } = await import("@/lib/ghl");
+    const { pipelines, error } = await fetchGhlPipelines();
+    setGhlPipelines(pipelines);
+    setGhlLoadError(error);
+    setGhlLoading(false);
   }
 
   if (loading) {
@@ -104,6 +130,11 @@ export default function AdminSettingsPage() {
                 label="Legal Name"
                 value={settings.legal_name ?? ""}
                 onChange={(e) => setSettings((s) => ({ ...s, legal_name: e.target.value }))}
+              />
+              <Input
+                label="License Number (e.g. CCC1331656)"
+                value={settings.license_number ?? ""}
+                onChange={(e) => setSettings((s) => ({ ...s, license_number: e.target.value }))}
               />
               <Input
                 label="Email"
@@ -176,6 +207,120 @@ export default function AdminSettingsPage() {
               value={settings.terms_and_conditions ?? ""}
               onChange={(e) => setSettings((s) => ({ ...s, terms_and_conditions: e.target.value }))}
             />
+          </CardContent>
+        </Card>
+
+        {/* GoHighLevel Integration */}
+        <Card>
+          <CardContent className="space-y-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-zinc-300 uppercase tracking-wider">GoHighLevel CRM</h2>
+                <p className="text-xs text-zinc-500 mt-0.5">Sync contacts and opportunities to your GHL location.</p>
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={loadGhlPipelines}
+                loading={ghlLoading}
+              >
+                {ghlLoading ? "Loading…" : "Load Pipelines"}
+              </Button>
+            </div>
+
+            {ghlLoadError && (
+              <div className="rounded-xl border border-yellow-700/50 bg-yellow-950/30 px-4 py-3 text-sm text-yellow-300">
+                <p className="font-semibold mb-1">GHL token missing required scopes</p>
+                <p className="text-yellow-400/80 text-xs">{ghlLoadError}</p>
+                <p className="text-yellow-400/80 text-xs mt-2">You can still enter pipeline and stage IDs manually below (copy them from the GHL URL when viewing a pipeline).</p>
+              </div>
+            )}
+
+            {ghlPipelines !== null && ghlPipelines.length === 0 && !ghlLoadError && (
+              <div className="rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-sm text-zinc-400">
+                No pipelines found in GHL. Create one at{" "}
+                <a href="https://app.gohighlevel.com" target="_blank" rel="noreferrer" className="text-brand underline">
+                  app.gohighlevel.com
+                </a>{" "}
+                first.
+              </div>
+            )}
+
+            {ghlPipelines && ghlPipelines.length > 0 && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">Pipeline</label>
+                  <select
+                    className="w-full rounded-xl border border-zinc-700 bg-zinc-950/80 px-4 py-2.5 text-sm text-zinc-100 focus:border-brand focus:outline-none"
+                    value={settings.ghl_pipeline_id ?? ""}
+                    onChange={(e) => {
+                      setSettings((s) => ({ ...s, ghl_pipeline_id: e.target.value, ghl_sent_stage_id: "", ghl_won_stage_id: "" }));
+                    }}
+                  >
+                    <option value="">— Select pipeline —</option>
+                    {ghlPipelines.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+                {settings.ghl_pipeline_id && (() => {
+                  const pipeline = ghlPipelines.find((p) => p.id === settings.ghl_pipeline_id);
+                  if (!pipeline) return null;
+                  return (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-400 mb-1">Quote Sent stage</label>
+                        <select
+                          className="w-full rounded-xl border border-zinc-700 bg-zinc-950/80 px-4 py-2.5 text-sm text-zinc-100 focus:border-brand focus:outline-none"
+                          value={settings.ghl_sent_stage_id ?? ""}
+                          onChange={(e) => setSettings((s) => ({ ...s, ghl_sent_stage_id: e.target.value }))}
+                        >
+                          <option value="">— Select stage —</option>
+                          {pipeline.stages.map((st) => (
+                            <option key={st.id} value={st.id}>{st.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-400 mb-1">Quote Accepted (Won) stage</label>
+                        <select
+                          className="w-full rounded-xl border border-zinc-700 bg-zinc-950/80 px-4 py-2.5 text-sm text-zinc-100 focus:border-brand focus:outline-none"
+                          value={settings.ghl_won_stage_id ?? ""}
+                          onChange={(e) => setSettings((s) => ({ ...s, ghl_won_stage_id: e.target.value }))}
+                        >
+                          <option value="">— Select stage —</option>
+                          {pipeline.stages.map((st) => (
+                            <option key={st.id} value={st.id}>{st.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* Manual fallback inputs always visible */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <Input
+                label="Pipeline ID (manual)"
+                placeholder="GHL pipeline ID"
+                value={settings.ghl_pipeline_id ?? ""}
+                onChange={(e) => setSettings((s) => ({ ...s, ghl_pipeline_id: e.target.value }))}
+              />
+              <Input
+                label="Sent Stage ID"
+                placeholder="GHL stage ID"
+                value={settings.ghl_sent_stage_id ?? ""}
+                onChange={(e) => setSettings((s) => ({ ...s, ghl_sent_stage_id: e.target.value }))}
+              />
+              <Input
+                label="Won Stage ID"
+                placeholder="GHL stage ID"
+                value={settings.ghl_won_stage_id ?? ""}
+                onChange={(e) => setSettings((s) => ({ ...s, ghl_won_stage_id: e.target.value }))}
+              />
+            </div>
           </CardContent>
         </Card>
 

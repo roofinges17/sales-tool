@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Table } from "@/components/ui/Table";
 import type { Column } from "@/components/ui/Table";
+import { toast } from "sonner";
 
 interface LeadSource {
   id: string;
@@ -32,6 +33,8 @@ export default function LeadSourcesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editSource, setEditSource] = useState<Partial<LeadSource> | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => { load(); }, []);
@@ -46,13 +49,28 @@ export default function LeadSourcesPage() {
   function openNew() {
     setEditSource(emptySource());
     setErrors({});
+    setDeleteConfirm(false);
     setModalOpen(true);
   }
 
   function openEdit(s: LeadSource) {
     setEditSource({ ...s });
     setErrors({});
+    setDeleteConfirm(false);
     setModalOpen(true);
+  }
+
+  async function handleDelete() {
+    const sourceId = (editSource as LeadSource)?.id;
+    if (!sourceId) return;
+    setDeleting(true);
+    const { error } = await supabase().from("lead_sources").delete().eq("id", sourceId);
+    setDeleting(false);
+    if (error) { toast.error("Delete failed: " + error.message); return; }
+    toast.success("Lead source deleted");
+    setDeleteConfirm(false);
+    setModalOpen(false);
+    load();
   }
 
   async function handleSave() {
@@ -71,17 +89,21 @@ export default function LeadSourcesPage() {
     };
 
     if ((editSource as LeadSource).id) {
-      await supabase().from("lead_sources").update(payload).eq("id", (editSource as LeadSource).id);
+      const { error } = await supabase().from("lead_sources").update(payload).eq("id", (editSource as LeadSource).id);
+      if (error) { toast.error("Save failed: " + error.message); setSaving(false); return; }
     } else {
-      await supabase().from("lead_sources").insert(payload);
+      const { error } = await supabase().from("lead_sources").insert(payload);
+      if (error) { toast.error("Save failed: " + error.message); setSaving(false); return; }
     }
+    toast.success("Saved");
     setSaving(false);
     setModalOpen(false);
     load();
   }
 
   async function toggleActive(s: LeadSource) {
-    await supabase().from("lead_sources").update({ is_active: !s.is_active }).eq("id", s.id);
+    const { error } = await supabase().from("lead_sources").update({ is_active: !s.is_active }).eq("id", s.id);
+    if (error) { toast.error("Update failed: " + error.message); return; }
     setSources((prev) => prev.map((x) => x.id === s.id ? { ...x, is_active: !x.is_active } : x));
   }
 
@@ -151,9 +173,22 @@ export default function LeadSourcesPage() {
               </button>
               <span className="text-sm text-zinc-300">Active</span>
             </div>
-            <div className="flex justify-end gap-3 pt-2 border-t border-zinc-800">
-              <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
-              <Button onClick={handleSave} loading={saving}>Save</Button>
+            <div className="flex items-center justify-between pt-2 border-t border-zinc-800">
+              {(editSource as LeadSource)?.id ? (
+                deleteConfirm ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-zinc-400">Delete this lead source?</span>
+                    <Button variant="danger" loading={deleting} onClick={handleDelete}>Confirm</Button>
+                    <Button variant="secondary" onClick={() => setDeleteConfirm(false)}>Cancel</Button>
+                  </div>
+                ) : (
+                  <Button variant="danger" onClick={() => setDeleteConfirm(true)}>Delete</Button>
+                )
+              ) : <span />}
+              <div className="flex gap-3">
+                <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
+                <Button onClick={handleSave} loading={saving}>Save</Button>
+              </div>
             </div>
           </div>
         )}
