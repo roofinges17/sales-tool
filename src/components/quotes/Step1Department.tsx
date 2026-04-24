@@ -18,6 +18,7 @@ export default function Step1Department() {
   const { state, setDepartment, setStep } = useQuoteBuilder();
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     supabase()
@@ -25,7 +26,11 @@ export default function Step1Department() {
       .select("*")
       .eq("is_active", true)
       .order("name")
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) {
+          console.error("[Step1Department] load failed:", error);
+          setLoadError(error.message);
+        }
         setDepartments((data as Department[]) ?? []);
         setLoading(false);
       });
@@ -79,7 +84,16 @@ export default function Step1Department() {
         })}
       </div>
 
-      {departments.length === 0 && (
+      {loadError && (
+        <Card>
+          <CardContent className="py-6 text-center">
+            <p className="text-red-400 text-sm">Could not load departments: {loadError}</p>
+            <p className="text-xs text-zinc-500 mt-1">Try refreshing. If it persists, contact support.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {!loadError && departments.length === 0 && (
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-zinc-400">No departments configured yet.</p>

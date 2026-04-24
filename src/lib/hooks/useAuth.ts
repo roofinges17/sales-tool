@@ -35,11 +35,12 @@ export function useAuth(): AuthState {
       setUser(user);
 
       if (user) {
-        const { data } = await supabase()
+        const { data, error } = await supabase()
           .from("profiles")
           .select("*")
           .eq("id", user.id)
           .single();
+        if (error) console.error("[useAuth] profile load failed:", error);
         if (mounted) setProfile(data as Profile | null);
       }
 
@@ -60,7 +61,8 @@ export function useAuth(): AuthState {
           .select("*")
           .eq("id", session.user.id)
           .single()
-          .then(({ data }) => {
+          .then(({ data, error }) => {
+            if (error) console.error("[useAuth] profile load on auth change failed:", error);
             if (mounted) {
               setProfile(data as Profile | null);
               setLoading(false);

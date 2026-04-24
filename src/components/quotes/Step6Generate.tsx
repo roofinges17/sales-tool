@@ -154,8 +154,9 @@ export default function Step6Generate() {
                 .update({ ghl_contact_id: ghlContactId, ghl_last_sync_at: new Date().toISOString() })
                 .eq("id", accountId!);
             }
-          } catch {
-            // GHL sync failure never surfaces to user
+          } catch (ghlErr) {
+            // GHL sync failure never surfaces to user, but log for debugging
+            console.warn("[Step6Generate] GHL contact sync failed:", ghlErr);
           }
         })();
       }

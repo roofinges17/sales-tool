@@ -47,7 +47,8 @@ export default function PipelinePage() {
       .select("id, name")
       .eq("is_active", true)
       .order("name")
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) console.error("[Pipeline] departments load failed:", error);
         const depts = (data as Department[]) ?? [];
         setDepartments(depts);
         if (depts.length > 0) setSelectedDeptId(depts[0].id);
