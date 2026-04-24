@@ -56,7 +56,8 @@ export default function Step2Products() {
       .eq("department_id", state.departmentId)
       .eq("is_active", true)
       .order("name")
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) console.error("[Step2Products] load failed:", error.message);
         setProducts((data as Product[]) ?? []);
         setLoading(false);
       });

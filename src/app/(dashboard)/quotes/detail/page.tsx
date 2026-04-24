@@ -936,8 +936,9 @@ function QuoteDetailContent() {
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
-              <label className="block text-xs font-medium text-zinc-400 mb-1">Name</label>
+              <label htmlFor="eq-name" className="block text-xs font-medium text-zinc-400 mb-1">Name</label>
               <input
+                id="eq-name"
                 type="text"
                 className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
                 value={editDraft.name}
@@ -945,8 +946,9 @@ function QuoteDetailContent() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1">Valid Until</label>
+              <label htmlFor="eq-valid-until" className="block text-xs font-medium text-zinc-400 mb-1">Valid Until</label>
               <input
+                id="eq-valid-until"
                 type="date"
                 className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
                 value={editDraft.valid_until}
@@ -954,8 +956,9 @@ function QuoteDetailContent() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1">Status</label>
+              <label htmlFor="eq-status" className="block text-xs font-medium text-zinc-400 mb-1">Status</label>
               <select
+                id="eq-status"
                 className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
                 value={editDraft.status}
                 onChange={(e) => setEditDraft((d) => ({ ...d, status: e.target.value }))}
@@ -966,8 +969,9 @@ function QuoteDetailContent() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1">Assigned To</label>
+              <label htmlFor="eq-assigned-to" className="block text-xs font-medium text-zinc-400 mb-1">Assigned To</label>
               <select
+                id="eq-assigned-to"
                 className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
                 value={editDraft.assigned_to_id}
                 onChange={(e) => setEditDraft((d) => ({ ...d, assigned_to_id: e.target.value }))}
@@ -977,8 +981,9 @@ function QuoteDetailContent() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1">Department</label>
+              <label htmlFor="eq-department" className="block text-xs font-medium text-zinc-400 mb-1">Department</label>
               <select
+                id="eq-department"
                 className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
                 value={editDraft.department_id}
                 onChange={(e) => setEditDraft((d) => ({ ...d, department_id: e.target.value }))}
@@ -988,8 +993,9 @@ function QuoteDetailContent() {
               </select>
             </div>
             <div className="col-span-2">
-              <label className="block text-xs font-medium text-zinc-400 mb-1">Notes</label>
+              <label htmlFor="eq-notes" className="block text-xs font-medium text-zinc-400 mb-1">Notes</label>
               <textarea
+                id="eq-notes"
                 rows={3}
                 className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30 placeholder:text-zinc-600"
                 placeholder="Internal notes…"

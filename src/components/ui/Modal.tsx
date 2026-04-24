@@ -26,13 +26,20 @@ export function Modal({ open, onClose, title, children, maxWidth = "max-w-lg" }:
       <div
         className="absolute inset-0 bg-black/70 backdrop-blur-sm"
         onClick={onClose}
+        aria-hidden="true"
       />
-      <div className={`relative w-full ${maxWidth} rounded-2xl border border-zinc-800 bg-zinc-900 shadow-2xl shadow-black/60`}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-title"
+        className={`relative w-full ${maxWidth} rounded-2xl border border-zinc-800 bg-zinc-900 shadow-2xl shadow-black/60`}
+      >
         <div className="flex items-center justify-between border-b border-zinc-800 px-6 py-4">
-          <h2 className="text-base font-semibold text-zinc-100">{title}</h2>
+          <h2 id="modal-title" className="text-base font-semibold text-zinc-100">{title}</h2>
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-200"
+            aria-label="Close dialog"
+            className="rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-brand/40"
           >
             <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />

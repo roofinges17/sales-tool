@@ -283,7 +283,7 @@ export default function DashboardPage() {
             <div className="grid grid-cols-2 gap-3">
               {[
                 { label: "New Customer", href: "/accounts/new/", icon: "👤" },
-                { label: "New Estimate", href: "/quotes/", icon: "📋" },
+                { label: "New Estimate", href: "/quotes/builder/", icon: "📋" },
                 { label: "Contracts", href: "/sales/", icon: "📄" },
                 { label: "Commissions", href: "/commissions/", icon: "💰" },
               ].map((action) => (

@@ -21,7 +21,8 @@ export default function Step5Financing() {
       .select("*")
       .eq("is_active", true)
       .order("term_months")
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) console.error("[Step5Financing] load failed:", error.message);
         setPlans((data as FinancingPlan[]) ?? []);
         setLoading(false);
       });

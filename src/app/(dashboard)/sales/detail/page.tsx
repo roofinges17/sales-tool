@@ -568,8 +568,9 @@ function SaleDetailContent() {
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
-              <label className="block text-xs font-medium text-zinc-400 mb-1">Name</label>
+              <label htmlFor="sc-name" className="block text-xs font-medium text-zinc-400 mb-1">Name</label>
               <input
+                id="sc-name"
                 type="text"
                 className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
                 value={editDraft.name}
@@ -577,8 +578,9 @@ function SaleDetailContent() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1">Contract Date</label>
+              <label htmlFor="sc-contract-date" className="block text-xs font-medium text-zinc-400 mb-1">Contract Date</label>
               <input
+                id="sc-contract-date"
                 type="date"
                 className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
                 value={editDraft.contract_date}
@@ -586,8 +588,9 @@ function SaleDetailContent() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1">Status</label>
+              <label htmlFor="sc-status" className="block text-xs font-medium text-zinc-400 mb-1">Status</label>
               <select
+                id="sc-status"
                 className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
                 value={editDraft.status}
                 onChange={(e) => setEditDraft((d) => ({ ...d, status: e.target.value }))}
@@ -598,8 +601,9 @@ function SaleDetailContent() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1">Primary Seller</label>
+              <label htmlFor="sc-seller" className="block text-xs font-medium text-zinc-400 mb-1">Primary Seller</label>
               <select
+                id="sc-seller"
                 className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
                 value={editDraft.primary_seller_id}
                 onChange={(e) => setEditDraft((d) => ({ ...d, primary_seller_id: e.target.value }))}
@@ -609,8 +613,9 @@ function SaleDetailContent() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1">Department</label>
+              <label htmlFor="sc-department" className="block text-xs font-medium text-zinc-400 mb-1">Department</label>
               <select
+                id="sc-department"
                 className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30"
                 value={editDraft.department_id}
                 onChange={(e) => setEditDraft((d) => ({ ...d, department_id: e.target.value }))}
@@ -620,8 +625,9 @@ function SaleDetailContent() {
               </select>
             </div>
             <div className="col-span-2">
-              <label className="block text-xs font-medium text-zinc-400 mb-1">Notes</label>
+              <label htmlFor="sc-notes" className="block text-xs font-medium text-zinc-400 mb-1">Notes</label>
               <textarea
+                id="sc-notes"
                 rows={3}
                 className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand focus:ring-1 focus:ring-brand/30 placeholder:text-zinc-600"
                 placeholder="Internal notes…"
