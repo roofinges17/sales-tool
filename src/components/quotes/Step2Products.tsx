@@ -6,6 +6,7 @@ import { useQuoteBuilder } from "@/lib/contexts/QuoteBuilderContext";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { RoofMeasure, type RoofData } from "@/components/RoofMeasure";
+import DamageAnalysis, { type DamageItem } from "@/components/quotes/DamageAnalysis";
 import type { CartItem } from "@/lib/contexts/QuoteBuilderContext";
 
 interface Product {
@@ -263,9 +264,31 @@ export default function Step2Products() {
           )}
         </div>
 
-        {/* Right: RoofMeasure + Estimate Items (hidden on mobile) */}
+        {/* Right: RoofMeasure + DamageAnalysis + Estimate Items (hidden on mobile) */}
         <div className="hidden lg:block space-y-4">
           <RoofMeasure onMeasured={handleRoofMeasured} />
+          <DamageAnalysis
+            products={products}
+            onAddToCart={(damageItems) => {
+              for (const { product, quantity, damageItem } of damageItems) {
+                const unitPrice = product.default_price ?? product.price ?? 0;
+                addToCart({
+                  product_id: product.id,
+                  product_name: `${product.name} (${damageItem.location})`,
+                  product_sku: product.code,
+                  quantity,
+                  unit_price: unitPrice * quantity,
+                  unit_cost: product.cost,
+                  min_price: product.min_price,
+                  max_price: product.max_price,
+                  default_price: product.default_price ?? product.price,
+                  product_type: product.product_type,
+                  unit: product.unit ?? damageItem.unit,
+                  is_manual_qty: true,
+                } satisfies Omit<CartItem, "line_total">);
+              }
+            }}
+          />
 
           {/* Estimate Items */}
           <div className="rounded-lg border border-border-subtle bg-surface-1 overflow-hidden">
