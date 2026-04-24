@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/Badge";
 import { RoofMeasure, type RoofData } from "@/components/RoofMeasure";
 import DamageAnalysis, { type DamageItem } from "@/components/quotes/DamageAnalysis";
 import MaterialAnalysis, { type MaterialItem } from "@/components/quotes/MaterialAnalysis";
+import VoiceEstimateRecorder, { type VoiceItem } from "@/components/quotes/VoiceEstimateRecorder";
 import type { CartItem } from "@/lib/contexts/QuoteBuilderContext";
 
 interface Product {
@@ -307,6 +308,28 @@ export default function Step2Products() {
                   default_price: product.default_price ?? product.price,
                   product_type: product.product_type,
                   unit: "lf",
+                  is_manual_qty: true,
+                } satisfies Omit<CartItem, "line_total">);
+              }
+            }}
+          />
+          <VoiceEstimateRecorder
+            products={products}
+            onAddToCart={(voiceItems) => {
+              for (const { product, quantity, voiceItem } of voiceItems) {
+                const unitPrice = product.default_price ?? product.price ?? 0;
+                addToCart({
+                  product_id: product.id,
+                  product_name: `${product.name} (${voiceItem.description})`,
+                  product_sku: product.code,
+                  quantity,
+                  unit_price: unitPrice,
+                  unit_cost: product.cost,
+                  min_price: product.min_price,
+                  max_price: product.max_price,
+                  default_price: product.default_price ?? product.price,
+                  product_type: product.product_type,
+                  unit: product.unit ?? voiceItem.unit,
                   is_manual_qty: true,
                 } satisfies Omit<CartItem, "line_total">);
               }
