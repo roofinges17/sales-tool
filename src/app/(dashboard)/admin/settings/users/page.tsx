@@ -53,6 +53,7 @@ export default function UsersPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [purging, setPurging] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -93,6 +94,24 @@ export default function UsersPage() {
     setDeleting(false);
     if (error) { toast.error("Failed: " + error.message); return; }
     toast.success("User deactivated");
+    setDeleteConfirm(false);
+    setModalOpen(false);
+    loadAll();
+  }
+
+  async function handlePurgeAuth() {
+    const userId = (editUser as UserProfile)?.id;
+    if (!userId) return;
+    setPurging(true);
+    const res = await fetch("/api/admin/purge-user", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: userId }),
+    });
+    const json = (await res.json()) as { ok?: boolean; error?: string };
+    setPurging(false);
+    if (!res.ok || json.error) { toast.error(json.error ?? "Purge failed"); return; }
+    toast.success("Auth record removed — email address is now free to re-invite.");
     setDeleteConfirm(false);
     setModalOpen(false);
     loadAll();
@@ -271,10 +290,13 @@ export default function UsersPage() {
             <div className="flex items-center justify-between pt-2 border-t border-zinc-800">
               {(editUser as UserProfile)?.id ? (
                 deleteConfirm ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-zinc-400">Deactivate this user?</span>
-                    <Button variant="danger" loading={deleting} onClick={handleDelete}>Confirm</Button>
-                    <Button variant="secondary" onClick={() => setDeleteConfirm(false)}>Cancel</Button>
+                  <div className="space-y-2">
+                    <p className="text-sm text-zinc-400">Deactivate keeps the account but blocks login. Purge Auth Record removes the email from authentication so it can be re-invited.</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Button variant="danger" loading={deleting} onClick={handleDelete}>Deactivate</Button>
+                      <Button variant="danger" loading={purging} onClick={handlePurgeAuth}>Purge Auth Record</Button>
+                      <Button variant="secondary" onClick={() => setDeleteConfirm(false)}>Cancel</Button>
+                    </div>
                   </div>
                 ) : (
                   <Button variant="danger" onClick={() => setDeleteConfirm(true)}>Deactivate</Button>

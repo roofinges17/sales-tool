@@ -41,6 +41,9 @@ export default function WorkflowsPage() {
   const [newStageName, setNewStageName] = useState("");
   const [newStageColor, setNewStageColor] = useState("#3b82f6");
   const [saving, setSaving] = useState(false);
+  const [pendingDeleteStage, setPendingDeleteStage] = useState<WorkflowStage | null>(null);
+  const [stageRefCount, setStageRefCount] = useState<number | null>(null);
+  const [migrateStageTo, setMigrateStageTo] = useState<string>("");
 
   useEffect(() => {
     supabase()
@@ -128,10 +131,33 @@ export default function WorkflowsPage() {
     setStages((prev) => prev.map((s) => s.id === stage.id ? { ...s, ...updates } : s));
   }
 
-  async function deleteStage(stageId: string) {
-    const { error } = await supabase().from("workflow_stages").delete().eq("id", stageId);
-    if (error) { toast.error("Update failed: " + error.message); return; }
-    setStages((prev) => prev.filter((s) => s.id !== stageId));
+  async function initiateDeleteStage(stage: WorkflowStage) {
+    const { count } = await supabase()
+      .from("sales")
+      .select("id", { count: "exact", head: true })
+      .eq("workflow_stage_id", stage.id);
+    setStageRefCount(count ?? 0);
+    setMigrateStageTo("");
+    setPendingDeleteStage(stage);
+  }
+
+  async function confirmDeleteStage() {
+    if (!pendingDeleteStage) return;
+    setSaving(true);
+    if ((stageRefCount ?? 0) > 0 && migrateStageTo) {
+      const { error: migErr } = await supabase()
+        .from("sales")
+        .update({ workflow_stage_id: migrateStageTo })
+        .eq("workflow_stage_id", pendingDeleteStage.id);
+      if (migErr) { toast.error("Migration failed: " + migErr.message); setSaving(false); return; }
+    }
+    const { error } = await supabase().from("workflow_stages").delete().eq("id", pendingDeleteStage.id);
+    setSaving(false);
+    if (error) { toast.error("Delete failed: " + error.message); return; }
+    setStages((prev) => prev.filter((s) => s.id !== pendingDeleteStage.id));
+    toast.success("Stage deleted");
+    setPendingDeleteStage(null);
+    setStageRefCount(null);
   }
 
   async function moveStage(stageId: string, direction: "up" | "down") {
@@ -243,7 +269,7 @@ export default function WorkflowsPage() {
                       {stage.is_terminal ? "Unset Terminal" : "Set Terminal"}
                     </button>
                     <button
-                      onClick={() => deleteStage(stage.id)}
+                      onClick={() => initiateDeleteStage(stage)}
                       className="p-1 text-zinc-600 hover:text-red-400"
                     >
                       <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -253,6 +279,39 @@ export default function WorkflowsPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Stage delete confirmation */}
+          {pendingDeleteStage && (
+            <div className="rounded-xl border border-red-800/40 bg-red-950/20 p-4 space-y-3">
+              <p className="text-sm font-semibold text-red-300">Delete stage &ldquo;{pendingDeleteStage.name}&rdquo;?</p>
+              {(stageRefCount ?? 0) > 0 ? (
+                <>
+                  <p className="text-sm text-amber-400">
+                    {stageRefCount} active job{stageRefCount === 1 ? "" : "s"} in this stage — select a stage to move them to before deleting.
+                  </p>
+                  <Select
+                    value={migrateStageTo}
+                    onChange={(e) => setMigrateStageTo(e.target.value)}
+                    placeholder="Move jobs to…"
+                    options={stages.filter((s) => s.id !== pendingDeleteStage.id).map((s) => ({ value: s.id, label: s.name }))}
+                  />
+                </>
+              ) : (
+                <p className="text-sm text-zinc-400">No active jobs in this stage. Safe to delete.</p>
+              )}
+              <div className="flex gap-2">
+                <Button
+                  variant="danger"
+                  loading={saving}
+                  onClick={confirmDeleteStage}
+                  disabled={(stageRefCount ?? 0) > 0 && !migrateStageTo}
+                >
+                  {(stageRefCount ?? 0) > 0 ? "Move & Delete" : "Delete"}
+                </Button>
+                <Button variant="secondary" onClick={() => setPendingDeleteStage(null)}>Cancel</Button>
+              </div>
             </div>
           )}
 

@@ -67,6 +67,7 @@ export default function ProductsPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleteRefCount, setDeleteRefCount] = useState<number | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -97,6 +98,7 @@ export default function ProductsPage() {
     setEditProduct(emptyProduct());
     setErrors({});
     setDeleteConfirm(false);
+    setDeleteRefCount(null);
     setModalOpen(true);
   }
 
@@ -104,7 +106,34 @@ export default function ProductsPage() {
     setEditProduct({ ...p });
     setErrors({});
     setDeleteConfirm(false);
+    setDeleteRefCount(null);
     setModalOpen(true);
+  }
+
+  async function checkAndShowDelete() {
+    const productId = (editProduct as Product)?.id;
+    if (!productId) return;
+    setDeleting(true);
+    const { count } = await supabase()
+      .from("quote_line_items")
+      .select("id", { count: "exact", head: true })
+      .eq("product_id", productId);
+    setDeleting(false);
+    setDeleteRefCount(count ?? 0);
+    setDeleteConfirm(true);
+  }
+
+  async function handleDeactivate() {
+    const productId = (editProduct as Product)?.id;
+    if (!productId) return;
+    setDeleting(true);
+    const { error } = await supabase().from("products").update({ is_active: false }).eq("id", productId);
+    setDeleting(false);
+    if (error) { toast.error("Update failed: " + error.message); return; }
+    toast.success("Product deactivated");
+    setDeleteConfirm(false);
+    setModalOpen(false);
+    loadAll();
   }
 
   async function handleDelete() {
@@ -372,13 +401,22 @@ export default function ProductsPage() {
             <div className="flex items-center justify-between pt-2 border-t border-zinc-800">
               {(editProduct as Product)?.id ? (
                 deleteConfirm ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-zinc-400">Delete this product?</span>
-                    <Button variant="danger" loading={deleting} onClick={handleDelete}>Confirm</Button>
-                    <Button variant="secondary" onClick={() => setDeleteConfirm(false)}>Cancel</Button>
+                  <div className="space-y-2">
+                    {(deleteRefCount ?? 0) > 0 ? (
+                      <p className="text-sm text-amber-400">
+                        Used in {deleteRefCount} line item{deleteRefCount === 1 ? "" : "s"} across quotes — deactivating preserves history.
+                      </p>
+                    ) : (
+                      <p className="text-sm text-zinc-400">Not used in any quotes. Safe to delete.</p>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <Button variant="secondary" loading={deleting} onClick={handleDeactivate}>Deactivate</Button>
+                      <Button variant="danger" loading={deleting} onClick={handleDelete}>Delete Anyway</Button>
+                      <Button variant="secondary" onClick={() => setDeleteConfirm(false)}>Cancel</Button>
+                    </div>
                   </div>
                 ) : (
-                  <Button variant="danger" onClick={() => setDeleteConfirm(true)}>Delete</Button>
+                  <Button variant="danger" loading={deleting} onClick={checkAndShowDelete}>Delete</Button>
                 )
               ) : <span />}
               <div className="flex gap-3">

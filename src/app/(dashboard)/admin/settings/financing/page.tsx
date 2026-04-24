@@ -41,6 +41,7 @@ export default function FinancingPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleteRefCount, setDeleteRefCount] = useState<number | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => { load(); }, []);
@@ -56,6 +57,7 @@ export default function FinancingPage() {
     setEditPlan(emptyPlan());
     setErrors({});
     setDeleteConfirm(false);
+    setDeleteRefCount(null);
     setModalOpen(true);
   }
 
@@ -63,7 +65,34 @@ export default function FinancingPage() {
     setEditPlan({ ...p });
     setErrors({});
     setDeleteConfirm(false);
+    setDeleteRefCount(null);
     setModalOpen(true);
+  }
+
+  async function checkAndShowDelete() {
+    const plan = editPlan as FinancingPlan;
+    if (!plan?.id) return;
+    setDeleting(true);
+    const { count } = await supabase()
+      .from("quotes")
+      .select("id", { count: "exact", head: true })
+      .eq("financing_provider", plan.provider_name);
+    setDeleting(false);
+    setDeleteRefCount(count ?? 0);
+    setDeleteConfirm(true);
+  }
+
+  async function handleDeactivate() {
+    const planId = (editPlan as FinancingPlan)?.id;
+    if (!planId) return;
+    setDeleting(true);
+    const { error } = await supabase().from("financing_plans").update({ is_active: false }).eq("id", planId);
+    setDeleting(false);
+    if (error) { toast.error("Update failed: " + error.message); return; }
+    toast.success("Financing plan deactivated");
+    setDeleteConfirm(false);
+    setModalOpen(false);
+    load();
   }
 
   async function handleDelete() {
@@ -204,13 +233,22 @@ export default function FinancingPage() {
             <div className="flex items-center justify-between pt-2 border-t border-zinc-800">
               {(editPlan as FinancingPlan)?.id ? (
                 deleteConfirm ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-zinc-400">Delete this plan?</span>
-                    <Button variant="danger" loading={deleting} onClick={handleDelete}>Confirm</Button>
-                    <Button variant="secondary" onClick={() => setDeleteConfirm(false)}>Cancel</Button>
+                  <div className="space-y-2">
+                    {(deleteRefCount ?? 0) > 0 ? (
+                      <p className="text-sm text-amber-400">
+                        {deleteRefCount} quote{deleteRefCount === 1 ? "" : "s"} used this plan — their data is preserved but deactivating is safer.
+                      </p>
+                    ) : (
+                      <p className="text-sm text-zinc-400">No quotes reference this plan. Safe to delete.</p>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <Button variant="secondary" loading={deleting} onClick={handleDeactivate}>Deactivate</Button>
+                      <Button variant="danger" loading={deleting} onClick={handleDelete}>Delete Anyway</Button>
+                      <Button variant="secondary" onClick={() => setDeleteConfirm(false)}>Cancel</Button>
+                    </div>
                   </div>
                 ) : (
-                  <Button variant="danger" onClick={() => setDeleteConfirm(true)}>Delete</Button>
+                  <Button variant="danger" loading={deleting} onClick={checkAndShowDelete}>Delete</Button>
                 )
               ) : <span />}
               <div className="flex gap-3">
