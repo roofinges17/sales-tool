@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useRouter, usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 const NAV_GROUPS_FULL = [
   {
@@ -43,6 +43,7 @@ export default function AdminSettingsLayout({ children }: { children: React.Reac
   const { profile, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && profile) {
@@ -87,36 +88,68 @@ export default function AdminSettingsLayout({ children }: { children: React.Reac
       ? pathname === href
       : pathname?.startsWith(href) ?? false;
 
+  const NavLinks = ({ onNav }: { onNav?: () => void }) => (
+    <>
+      {navGroups.map((group) => (
+        <div key={group.label}>
+          <p className="mb-1.5 px-3 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+            {group.label}
+          </p>
+          <div className="space-y-0.5">
+            {group.items.map((item) => (
+              <a
+                key={item.href}
+                href={item.href}
+                onClick={onNav}
+                className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+                  isActive(item.href)
+                    ? "bg-zinc-800 text-zinc-100"
+                    : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
+                }`}
+              >
+                <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
+                </svg>
+                {item.label}
+              </a>
+            ))}
+          </div>
+        </div>
+      ))}
+    </>
+  );
+
   return (
-    <div className="flex gap-8">
-      {/* Sidebar */}
-      <aside className="w-52 shrink-0">
+    <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
+      {/* Mobile menu toggle */}
+      <div className="lg:hidden flex items-center gap-3">
+        <button
+          onClick={() => setSidebarOpen((v) => !v)}
+          className="inline-flex items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-sm font-medium text-zinc-300 hover:bg-zinc-800 transition-colors"
+          aria-label="Toggle settings menu"
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+          Settings Menu
+        </button>
+        {/* Current page breadcrumb */}
+        <span className="text-sm text-zinc-500">
+          {navGroups.flatMap((g) => g.items).find((i) => isActive(i.href))?.label ?? "Settings"}
+        </span>
+      </div>
+
+      {/* Mobile sidebar drawer */}
+      {sidebarOpen && (
+        <div className="lg:hidden rounded-xl border border-zinc-800 bg-zinc-900/80 p-3 space-y-5">
+          <NavLinks onNav={() => setSidebarOpen(false)} />
+        </div>
+      )}
+
+      {/* Desktop sidebar */}
+      <aside className="hidden lg:block w-52 shrink-0">
         <div className="sticky top-24 space-y-5">
-          {navGroups.map((group) => (
-            <div key={group.label}>
-              <p className="mb-1.5 px-3 text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                {group.label}
-              </p>
-              <div className="space-y-0.5">
-                {group.items.map((item) => (
-                  <a
-                    key={item.href}
-                    href={item.href}
-                    className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
-                      isActive(item.href)
-                        ? "bg-zinc-800 text-zinc-100"
-                        : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
-                    }`}
-                  >
-                    <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
-                    </svg>
-                    {item.label}
-                  </a>
-                ))}
-              </div>
-            </div>
-          ))}
+          <NavLinks />
         </div>
       </aside>
 

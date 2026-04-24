@@ -50,7 +50,7 @@ function StepperHeader({ currentStep }: { currentStep: number }) {
           </div>
           {i < STEPS.length - 1 && (
             <div
-              className={`mx-3 h-px w-8 sm:w-16 md:w-24 transition-colors ${
+              className={`mx-1 h-px w-4 sm:mx-3 sm:w-12 md:w-20 transition-colors ${
                 step.number < currentStep ? "bg-green-500" : "bg-zinc-800"
               }`}
             />

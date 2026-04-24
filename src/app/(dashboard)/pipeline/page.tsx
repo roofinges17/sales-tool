@@ -129,12 +129,12 @@ export default function PipelinePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-zinc-50">Pipeline</h1>
           <p className="mt-1 text-sm text-zinc-500">Kanban view of contracts by workflow stage.</p>
         </div>
-        <div className="w-48">
+        <div className="w-full sm:w-48">
           <Select
             value={selectedDeptId}
             onChange={(e) => setSelectedDeptId(e.target.value)}
@@ -174,11 +174,11 @@ export default function PipelinePage() {
         </Card>
       ) : (
         <div className="overflow-x-auto pb-4">
-          <div className="flex gap-4 min-w-max">
+          <div className="flex gap-3 min-w-max">
             {stages.map((stage) => {
               const stageSales = salesByStage(stage.id);
               return (
-                <div key={stage.id} className="w-72 shrink-0">
+                <div key={stage.id} className="w-[260px] sm:w-72 shrink-0">
                   {/* Column header */}
                   <div
                     className="rounded-xl px-3 py-2 mb-3 flex items-center justify-between"
@@ -230,7 +230,7 @@ export default function PipelinePage() {
 
             {/* Unassigned column */}
             {unassigned.length > 0 && (
-              <div className="w-72 shrink-0">
+              <div className="w-[260px] sm:w-72 shrink-0">
                 <div className="rounded-xl px-3 py-2 mb-3 flex items-center justify-between bg-zinc-900 border-l-4 border-zinc-700">
                   <span className="text-sm font-semibold text-zinc-500">Unassigned</span>
                   <span className="text-xs text-zinc-600 bg-zinc-900 rounded-full px-2 py-0.5">{unassigned.length}</span>

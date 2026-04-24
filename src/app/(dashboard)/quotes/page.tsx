@@ -196,14 +196,14 @@ export default function QuotesPage() {
           <Tabs tabs={tabsWithCounts} activeTab={activeTab} onChange={(k) => setActiveTab(k as TabKey)} />
         </div>
         <div className="flex flex-wrap items-center gap-3 px-6 py-4">
-          <div className="flex-1 min-w-[200px]">
+          <div className="flex-1 min-w-0">
             <Input
               placeholder="Search by estimate # or customer…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <div className="w-48">
+          <div className="w-full sm:w-48">
             <Select
               value={deptFilter}
               onChange={(e) => setDeptFilter(e.target.value)}

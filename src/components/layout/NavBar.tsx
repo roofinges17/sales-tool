@@ -165,7 +165,7 @@ export function NavBar({ profile }: NavBarProps) {
 
           {/* Mobile hamburger */}
           <button
-            className="md:hidden rounded-lg p-2 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition"
+            className="md:hidden rounded-lg p-3 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition"
             onClick={() => setMobileMenuOpen((o) => !o)}
             aria-label="Toggle menu"
           >

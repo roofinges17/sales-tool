@@ -547,21 +547,21 @@ function QuoteDetailContent() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <a href="/quotes/" className="text-zinc-500 hover:text-zinc-300 text-sm">Estimates</a>
             <span className="text-zinc-700">/</span>
             <h1 className="text-2xl font-bold text-zinc-50">{quote.name}</h1>
             <Badge variant={statusVariant[quote.status] ?? "gray"}>{quote.status}</Badge>
           </div>
-          <div className="mt-1 flex items-center gap-4 text-sm text-zinc-500">
+          <div className="mt-1 flex flex-col gap-0.5 text-xs text-zinc-500 sm:flex-row sm:items-center sm:gap-4 sm:text-sm">
             <span>Customer: <span className="text-zinc-300">{(quote.account as { name?: string } | null)?.name ?? "—"}</span></span>
             <span>Valid until: <span className="text-zinc-300">{formatDate(quote.valid_until)}</span></span>
             <span>Total: <span className="text-zinc-100 font-semibold">{formatCurrency(quote.total)}</span></span>
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap justify-end">
+        <div className="flex flex-wrap items-center gap-2">
           {/* PDF download */}
           <Button variant="secondary" onClick={downloadPdf} title="Download PDF">
             <svg className="mr-1.5 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

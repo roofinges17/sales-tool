@@ -155,8 +155,8 @@ export default function Step3Customer() {
       ) : (
         <div className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6">
           <h3 className="text-sm font-semibold text-zinc-300">New Customer Details</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
               <Input
                 label="Full Name *"
                 value={state.newCustomer.name}
@@ -178,7 +178,7 @@ export default function Step3Customer() {
           </div>
           <div>
             <p className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3">Property Address</p>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-zinc-300 mb-1.5">Street Address</label>
                 <PlacesAutocompleteInput
