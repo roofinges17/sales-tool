@@ -11,6 +11,23 @@ interface Env {
   SUPABASE_URL: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
   FOLIO_CACHE?: KVNamespace;
+  QB_TOKEN_KEK?: string; // 32-byte AES-GCM key, base64-encoded
+}
+
+// AES-GCM encryption for QB token storage.
+// Format: "enc:v1:{base64 IV}.{base64 ciphertext}"
+// Tokens stored without QB_TOKEN_KEK are plaintext — same prefix absent.
+// Decryption counterpart lives in functions/api/quickbooks/sync.ts (Phase 22).
+const ENC_PREFIX = "enc:v1:";
+
+async function encryptToken(plaintext: string, kekBase64: string): Promise<string> {
+  const kekBytes = Uint8Array.from(atob(kekBase64), (c) => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey("raw", kekBytes, "AES-GCM", false, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const enc = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(plaintext));
+  const ivB64 = btoa(String.fromCharCode(...Array.from(iv)));
+  const ctB64 = btoa(String.fromCharCode(...Array.from(new Uint8Array(enc))));
+  return `${ENC_PREFIX}${ivB64}.${ctB64}`;
 }
 
 export const onRequestGet: PagesFunction<Env> = async (ctx) => {
@@ -66,11 +83,19 @@ export const onRequestGet: PagesFunction<Env> = async (ctx) => {
 
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
+    const kek = ctx.env.QB_TOKEN_KEK;
+    const accessToken = kek
+      ? await encryptToken(tokens.access_token, kek)
+      : tokens.access_token;
+    const refreshToken = kek
+      ? await encryptToken(tokens.refresh_token, kek)
+      : tokens.refresh_token;
+
     const supabase = createClient(ctx.env.SUPABASE_URL, ctx.env.SUPABASE_SERVICE_ROLE_KEY);
     await supabase.from("company_settings").update({
       qb_realm_id: realmId,
-      qb_access_token: tokens.access_token,
-      qb_refresh_token: tokens.refresh_token,
+      qb_access_token: accessToken,
+      qb_refresh_token: refreshToken,
       qb_token_expires_at: expiresAt,
     }).limit(1);
 
