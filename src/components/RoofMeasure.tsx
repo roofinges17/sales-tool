@@ -122,7 +122,7 @@ export function RoofMeasure({ onMeasured, className }: RoofMeasureProps) {
   }
 
   return (
-    <div className={`rounded-lg border border-border-subtle bg-surface-1 overflow-hidden${className ? ` ${className}` : ""}`}>
+    <div className={`rounded-lg border border-border-subtle bg-surface-1${className ? ` ${className}` : ""}`}>
       {/* Header */}
       <div className="px-4 py-3 border-b border-border-subtle bg-gradient-to-r from-accent/10 to-status-teal/10 flex items-center gap-2">
         <svg className="w-4 h-4 text-status-teal flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -140,18 +140,19 @@ export function RoofMeasure({ onMeasured, className }: RoofMeasureProps) {
             <p className="text-caption text-text-tertiary">
               Enter property address to measure roof area using satellite imagery
             </p>
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <PlacesAutocompleteInput
                 value={address}
                 onChange={(v) => { setAddress(v); latRef.current = null; lngRef.current = null; }}
                 onSelect={handlePlaceSelect}
                 placeholder="Enter property address..."
-                className="flex-1"
+                className="flex-1 min-w-0"
               />
               <Button
                 onClick={measure}
                 loading={loading}
                 disabled={!address.trim() || loading}
+                className="w-full sm:w-auto flex-shrink-0"
               >
                 {loading ? "Measuring" : "Measure"}
               </Button>

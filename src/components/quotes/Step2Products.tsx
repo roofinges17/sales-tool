@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useQuoteBuilder } from "@/lib/contexts/QuoteBuilderContext";
 import { Button } from "@/components/ui/Button";
+import { Badge } from "@/components/ui/Badge";
 import { RoofMeasure, type RoofData } from "@/components/RoofMeasure";
 import type { CartItem } from "@/lib/contexts/QuoteBuilderContext";
 
@@ -35,16 +36,13 @@ function isRoofCode(code: string | null | undefined) {
 }
 
 export default function Step2Products() {
-  const { state, addToCart, removeFromCart, updateCartQty, updateCartPrice, setStep, subtotal } = useQuoteBuilder();
+  const { state, addToCart, removeFromCart, updateCartQty, setStep, subtotal } = useQuoteBuilder();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterTab, setFilterTab] = useState<FilterTab>("All");
-  const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
-  const [priceInput, setPriceInput] = useState("");
   const [manualSqftId, setManualSqftId] = useState<string | null>(null);
   const [manualSqftInput, setManualSqftInput] = useState("");
-
   const [measuredRoof, setMeasuredRoof] = useState<RoofData | null>(null);
 
   useEffect(() => {
@@ -97,14 +95,13 @@ export default function Step2Products() {
     const sqft = parseFloat(manualSqftInput);
     if (isNaN(sqft) || sqft <= 0) return;
     const pricePerSqft = product.default_price ?? product.price ?? 0;
-    const lineTotal = pricePerSqft * sqft;
     const item: Omit<CartItem, "line_total"> = {
       product_id: product.id,
       product_name: product.name,
       product_sku: product.code,
-      product_description: `${sqft} sq ft manual entry`,
+      product_description: `${sqft} sq ft`,
       quantity: 1,
-      unit_price: lineTotal,
+      unit_price: pricePerSqft * sqft,
       unit_cost: product.cost,
       min_price: product.min_price,
       max_price: product.max_price,
@@ -118,20 +115,8 @@ export default function Step2Products() {
     setManualSqftInput("");
   }
 
-  function startEditPrice(item: CartItem) {
-    setEditingPriceId(item.product_id);
-    setPriceInput(item.unit_price.toString());
-  }
-
-  function commitPrice(productId: string) {
-    const val = parseFloat(priceInput);
-    if (!isNaN(val)) updateCartPrice(productId, val);
-    setEditingPriceId(null);
-  }
-
   function handleRoofMeasured(data: RoofData) {
     setMeasuredRoof(data);
-    // Pre-fill folio lookup from lat/lng — not available here; Step3 handles it from address
   }
 
   function getAutoSqft(code: string | null | undefined): number {
@@ -142,79 +127,80 @@ export default function Step2Products() {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
-      {/* Left: Product Catalog */}
-      <div className="space-y-4">
-        <div className="space-y-1.5">
-          <div className="relative">
-            <input
-              className="w-full h-9 rounded-md border px-3 text-text-primary placeholder:text-text-muted border-border hover:border-border-strong focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none transition-colors duration-150 bg-surface-2"
-              placeholder="Search products..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-        </div>
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
+        {/* Left: Product catalog */}
+        <div className="space-y-4">
+          <input
+            className="w-full h-9 rounded-md border px-3 text-body text-text-primary placeholder:text-text-muted border-border hover:border-border-strong focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none transition-colors duration-150 bg-surface-2"
+            placeholder="Search products..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
 
-        {/* Filter tabs */}
-        <div className="flex gap-2 flex-wrap">
-          {FILTER_TABS.map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setFilterTab(tab)}
-              className={`px-4 py-2 rounded-md font-medium transition-colors text-sm ${
-                filterTab === tab
-                  ? "bg-accent text-white"
-                  : "bg-surface-2 text-text-secondary hover:bg-surface-3"
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
+          {/* Category filter tabs */}
+          <div className="flex gap-2 flex-wrap">
+            {FILTER_TABS.map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setFilterTab(tab)}
+                className={`px-4 py-2 rounded-md text-body-sm font-medium transition-colors ${
+                  filterTab === tab
+                    ? "bg-accent text-white"
+                    : "bg-surface-2 text-text-secondary hover:bg-surface-3"
+                }`}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
 
-        {/* Product list */}
-        {loading ? (
-          <div className="flex items-center justify-center py-12 text-text-muted text-sm">
-            <svg className="mr-2 h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-            Loading…
-          </div>
-        ) : filteredProducts.length === 0 ? (
-          <div className="py-12 text-center text-text-muted text-sm">
-            No products found.{" "}
-            <a href="/admin/settings/products/" className="text-accent hover:underline">
-              Add products in Settings.
-            </a>
-          </div>
-        ) : (
-          <div className="rounded-lg border border-border-subtle bg-surface-1 overflow-hidden">
-            <div className="divide-y divide-border-subtle">
-              {filteredProducts.map((product) => {
-                const inCart = state.cart.find((c) => c.product_id === product.id);
-                return (
-                  <div key={product.id} className="flex items-center justify-between gap-4 p-4 hover:bg-surface-3 transition-colors">
+          {/* Product list */}
+          {loading ? (
+            <div className="flex items-center justify-center py-12 text-text-muted text-sm">
+              <svg className="mr-2 h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Loading…
+            </div>
+          ) : filteredProducts.length === 0 ? (
+            <div className="py-12 text-center text-text-muted text-sm">
+              No products found.{" "}
+              <a href="/admin/settings/products/" className="text-accent hover:underline">
+                Add products in Settings.
+              </a>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-border-subtle bg-surface-1 overflow-hidden">
+              <div className="divide-y divide-border-subtle">
+                {filteredProducts.map((product) => (
+                  <div
+                    key={product.id}
+                    className="flex items-center justify-between gap-4 p-4 hover:bg-surface-3 transition-colors"
+                  >
                     <div className="min-w-0 flex-1">
-                      <p className="text-body-sm font-semibold text-text-primary truncate">{product.name}</p>
-                      {product.code && <p className="text-caption text-text-muted font-mono">{product.code}</p>}
+                      <p className="text-body-sm font-semibold text-text-primary truncate">
+                        {product.name}
+                      </p>
+                      {product.code && (
+                        <p className="text-caption text-text-muted font-mono">{product.code}</p>
+                      )}
                     </div>
+
                     <div className="flex items-center gap-3 flex-shrink-0">
-                      <span className="inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded-full font-medium border bg-accent-subtle text-accent border-accent/20 text-xs">
+                      <Badge variant={product.product_type === "PRODUCT" ? "blue" : "purple"}>
                         {product.product_type}
-                      </span>
-                      <span className="text-caption text-text-tertiary">{product.unit ?? "sq ft"}</span>
+                      </Badge>
+                      {product.unit && (
+                        <span className="text-caption text-text-tertiary">{product.unit}</span>
+                      )}
                       <span className="text-body-sm font-medium text-status-green min-w-[4rem] text-right">
                         {fmt(product.default_price ?? product.price)}
                       </span>
+
                       {isRoofCode(product.code) ? (
                         <div className="flex items-center gap-1.5">
-                          <span className="w-8 h-8 rounded-full bg-status-teal/10 text-status-teal flex items-center justify-center" title="Add via satellite measurement">
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                            </svg>
-                          </span>
                           {manualSqftId === product.id ? (
                             <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                               <input
@@ -240,7 +226,9 @@ export default function Step2Products() {
                               <button
                                 onClick={() => { setManualSqftId(null); setManualSqftInput(""); }}
                                 className="h-6 w-6 rounded bg-surface-3 text-text-muted text-xs flex items-center justify-center hover:bg-surface-2 transition"
-                              >✕</button>
+                              >
+                                ✕
+                              </button>
                             </div>
                           ) : (
                             <button
@@ -249,7 +237,7 @@ export default function Step2Products() {
                                 const auto = getAutoSqft(product.code);
                                 setManualSqftInput(auto > 0 ? String(auto) : "");
                               }}
-                              className="text-xs text-text-muted hover:text-accent transition whitespace-nowrap"
+                              className="text-xs text-text-muted hover:text-accent transition whitespace-nowrap border border-border rounded px-2 py-1 hover:border-accent"
                               title={measuredRoof ? "Click to use measured area" : "Enter sq ft manually"}
                             >
                               {measuredRoof ? `${getAutoSqft(product.code)} sf` : "sq ft"}
@@ -269,144 +257,124 @@ export default function Step2Products() {
                       )}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Right sidebar */}
-      <div className="space-y-4">
-        <RoofMeasure onMeasured={handleRoofMeasured} />
-
-        {/* Estimate Items card */}
-        <div className="rounded-lg border border-border-subtle bg-surface-1 overflow-hidden">
-          <div className="px-4 py-3 border-b border-border-subtle bg-surface-2">
-            <h3 className="text-heading-sm text-text-primary">Estimate Items</h3>
-            <p className="text-caption text-text-tertiary">{state.cart.length} items</p>
-          </div>
-
-          {state.cart.length === 0 ? (
-            <div className="p-8 text-center">
-              <div className="w-10 h-10 rounded-lg bg-surface-3 flex items-center justify-center mx-auto mb-3">
-                <svg className="w-5 h-5 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
+                ))}
               </div>
-              <p className="text-body-sm text-text-tertiary">No items added</p>
-              <p className="text-caption text-text-muted">Add products from the catalog to build your estimate</p>
             </div>
-          ) : (
-            <div className="divide-y divide-border-subtle">
-              {state.cart.map((item) => {
-                const isMeasured = item.unit === "section";
-                return (
-                  <div key={item.product_id} className="p-3">
+          )}
+        </div>
+
+        {/* Right: RoofMeasure + Estimate Items (hidden on mobile) */}
+        <div className="hidden lg:block space-y-4">
+          <RoofMeasure onMeasured={handleRoofMeasured} />
+
+          {/* Estimate Items */}
+          <div className="rounded-lg border border-border-subtle bg-surface-1 overflow-hidden">
+            <div className="px-4 py-3 border-b border-border-subtle bg-surface-2">
+              <h3 className="text-heading-sm text-text-primary">Estimate Items</h3>
+              <p className="text-caption text-text-tertiary">
+                {state.cart.length} item{state.cart.length !== 1 ? "s" : ""}
+              </p>
+            </div>
+
+            {state.cart.length === 0 ? (
+              <div className="p-8 text-center">
+                <div className="w-10 h-10 rounded-lg bg-surface-3 flex items-center justify-center mx-auto mb-3">
+                  <svg className="w-5 h-5 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <p className="text-body-sm text-text-tertiary">No items added</p>
+                <p className="text-caption text-text-muted">
+                  Add products from the catalog to build your estimate
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border-subtle">
+                {state.cart.map((item) => (
+                  <div key={item.product_id} className={`p-4 ${item.product_type === "SERVICE" ? "bg-status-orange/5" : ""}`}>
                     <div className="flex items-start justify-between gap-2 mb-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-body-sm font-medium text-text-primary truncate">{item.product_name}</p>
-                        {item.product_description && (
-                          <p className="text-caption text-text-muted truncate">{item.product_description}</p>
-                        )}
-                        {item.is_manual_qty && (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/20 text-amber-400 border border-amber-500/30 mt-0.5">
-                            MANUAL OVERRIDE
-                          </span>
+                      <div className="min-w-0">
+                        <p className="text-body-sm font-medium text-text-primary truncate">
+                          {item.product_name}
+                        </p>
+                        {item.product_sku && (
+                          <p className="text-caption text-text-muted">{item.product_sku}</p>
                         )}
                       </div>
                       <button
                         onClick={() => removeFromCart(item.product_id)}
-                        className="shrink-0 text-text-muted hover:text-red-400 transition p-0.5"
+                        className="p-1 rounded text-text-muted hover:text-status-red hover:bg-status-red/10 transition-colors flex-shrink-0"
                       >
-                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                         </svg>
                       </button>
                     </div>
-                    {isMeasured ? (
-                      // Measured roof section — area is baked into line_total, no qty control
-                      <div className="flex items-center justify-end gap-2">
-                        <span className="text-caption text-text-muted">measured area</span>
-                        <span className="text-xs font-semibold text-text-primary">{fmt(item.line_total)}</span>
-                      </div>
-                    ) : (
-                      // Qty-based item — direct-entry number input + optional ±1 steppers
-                      <div className="flex items-center gap-2 justify-between">
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => updateCartQty(item.product_id, item.quantity - 1)}
-                            disabled={item.quantity <= 1}
-                            className="h-6 w-6 rounded bg-surface-3 text-text-secondary flex items-center justify-center text-xs hover:bg-surface-2 disabled:opacity-40"
-                          >−</button>
-                          <input
-                            type="number"
-                            min="1"
-                            value={item.quantity}
-                            onChange={(e) => {
-                              const v = parseInt(e.target.value);
-                              if (!isNaN(v) && v > 0) updateCartQty(item.product_id, v);
-                            }}
-                            className="w-10 text-center text-xs text-text-primary bg-surface-2 border border-border rounded px-1 py-0.5 outline-none focus:border-accent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                          />
-                          <button
-                            onClick={() => updateCartQty(item.product_id, item.quantity + 1)}
-                            className="h-6 w-6 rounded bg-surface-3 text-text-secondary flex items-center justify-center text-xs hover:bg-surface-2"
-                          >+</button>
-                        </div>
-                        {editingPriceId === item.product_id ? (
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={priceInput}
-                            onChange={(e) => setPriceInput(e.target.value)}
-                            onBlur={() => commitPrice(item.product_id)}
-                            onKeyDown={(e) => e.key === "Enter" && commitPrice(item.product_id)}
-                            autoFocus
-                            className="w-20 rounded border border-accent bg-surface-2 px-2 py-0.5 text-xs text-text-primary outline-none"
-                          />
-                        ) : (
-                          <button
-                            onClick={() => startEditPrice(item)}
-                            className="text-xs text-text-secondary hover:text-accent transition font-medium"
-                          >
-                            {fmt(item.unit_price)}
-                          </button>
-                        )}
-                        <span className="text-xs font-semibold text-text-primary">{fmt(item.line_total)}</span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-              <div className="px-3 py-2 flex justify-between items-center bg-surface-2">
-                <span className="text-caption text-text-tertiary">Subtotal</span>
-                <span className="text-body-sm font-bold text-text-primary">{fmt(subtotal)}</span>
-              </div>
-            </div>
-          )}
-        </div>
 
-        {/* Navigation */}
-        <div className="space-y-2">
-          <div className="flex gap-3">
-            <Button variant="secondary" onClick={() => setStep(1)}>Back</Button>
-            <Button
-              className="flex-1"
-              disabled={state.cart.length === 0}
-              onClick={() => setStep(3)}
-            >
-              Next: Customer
-            </Button>
+                    <div className="flex items-center gap-2 text-caption">
+                      <span className="text-text-tertiary">Qty:</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        defaultValue={item.quantity}
+                        key={item.product_id}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v === "" || v === ".") return;
+                          const num = Number(v);
+                          if (!isNaN(num) && num > 0) updateCartQty(item.product_id, num);
+                        }}
+                        onBlur={(e) => {
+                          const num = Number(e.target.value);
+                          if (!e.target.value || isNaN(num) || num <= 0)
+                            e.target.value = String(item.quantity);
+                        }}
+                        className="w-16 h-6 rounded border border-border bg-surface-2 px-1.5 text-caption text-text-primary text-center focus:border-accent focus:outline-none"
+                      />
+                      {item.unit && (
+                        <span className="text-text-muted">{item.unit}</span>
+                      )}
+                      <span className="text-text-tertiary mx-1">@</span>
+                      <span className="text-text-secondary">{fmt(item.unit_price)}</span>
+                    </div>
+
+                    <div className="text-right mt-1">
+                      <span className="text-body-sm font-medium text-text-primary">
+                        {fmt(item.line_total)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+
+                <div className="px-4 py-3 bg-surface-2">
+                  <div className="flex justify-between">
+                    <span className="text-body-sm text-text-secondary">Subtotal</span>
+                    <span className="text-body-sm font-semibold text-text-primary">{fmt(subtotal)}</span>
+                  </div>
+                  <p className="text-caption text-text-muted mt-1">
+                    Tax and discounts calculated at checkout
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
-          {state.cart.length === 0 && (
-            <p className="text-center text-caption text-text-muted">
-              Add at least one item to continue.
-            </p>
-          )}
         </div>
       </div>
 
+      {/* Navigation — full width below the grid */}
+      <div className="flex items-center justify-between pt-2">
+        <Button variant="secondary" onClick={() => setStep(1)}>
+          Back
+        </Button>
+        <div className="flex items-center gap-3">
+          {state.cart.length === 0 && (
+            <p className="text-caption text-text-muted">Add at least one item to continue.</p>
+          )}
+          <Button disabled={state.cart.length === 0} onClick={() => setStep(3)}>
+            Continue
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

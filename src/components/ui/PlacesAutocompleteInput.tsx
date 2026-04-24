@@ -199,7 +199,8 @@ export function PlacesAutocompleteInput({
   // Container is sized only (flex/width). PlaceAutocompleteElement owns all
   // visual chrome (input box border, bg, dropdown) via --gmpx-* custom props.
   // No border/bg/overflow on the container — those were for the old plain input.
-  const defaultClass = "flex-1 relative";
+  // position:relative + z-index ensure the dropdown layers above card siblings.
+  const defaultClass = "flex-1 relative z-50";
 
   if (!MAPS_KEY) {
     return (
@@ -221,6 +222,9 @@ export function PlacesAutocompleteInput({
       className={className ?? defaultClass}
       style={
         {
+          // position + z-index ensure dropdown renders above card siblings.
+          position: "relative",
+          zIndex: 50,
           // --gmpx-* are Google's documented theming surface for PlaceAutocompleteElement.
           // Real colors (not transparent) so the dropdown is visible on dark backgrounds.
           "--gmpx-color-surface": "#18181b",               // zinc-900 — input bg
