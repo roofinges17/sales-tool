@@ -85,12 +85,13 @@ const statusVariant: Record<string, "gray" | "orange" | "blue" | "green" | "red"
 type TabKey = "overview" | "photos" | "notes" | "visualize";
 
 async function getNextContractNumber(prefix: string): Promise<string> {
-  const { data } = await supabase()
+  const { data, error } = await supabase()
     .from("sales")
     .select("contract_number")
     .ilike("contract_number", `${prefix}%`)
     .order("created_at", { ascending: false })
     .limit(1);
+  if (error) console.error("[getNextContractNumber]", error.message);
 
   let nextNum = 1;
   if (data && data.length > 0) {
@@ -137,11 +138,12 @@ function QuoteDetailContent() {
 
   async function loadQuote() {
     setLoading(true);
-    const { data } = await supabase()
+    const { data, error } = await supabase()
       .from("quotes")
       .select("*, accept_token, accepted_at, signed_at, customer_signature_data_url, visualization_color_id, visualization_image, account:account_id(id, name, email, billing_address_line1, billing_city, billing_state, billing_zip), assigned_to:assigned_to_id(id, name), department:department_id(id, name), quote_line_items(*)")
       .eq("id", quoteId!)
       .single();
+    if (error && error.code !== "PGRST116") toast.error("Failed to load estimate: " + error.message);
     setQuote(data as QuoteDetail | null);
     setLoading(false);
   }
@@ -289,20 +291,22 @@ function QuoteDetailContent() {
   }
 
   async function loadNotes() {
-    const { data } = await supabase()
+    const { data, error } = await supabase()
       .from("quote_notes")
       .select("*")
       .eq("quote_id", quoteId!)
       .order("created_at", { ascending: false });
+    if (error) toast.error("Failed to load notes: " + error.message);
     setNotes((data as Array<{ id: string; content: string; author_name?: string; created_at: string }>) ?? []);
   }
 
   async function loadPhotos() {
-    const { data } = await supabase()
+    const { data, error } = await supabase()
       .from("project_photos")
       .select("*")
       .eq("quote_id", quoteId!)
       .order("uploaded_at", { ascending: true });
+    if (error) toast.error("Failed to load photos: " + error.message);
     setPhotos((data as ProjectPhoto[]) ?? []);
   }
 

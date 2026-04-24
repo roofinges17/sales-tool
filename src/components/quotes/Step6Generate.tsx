@@ -11,12 +11,13 @@ function formatCurrency(v: number) {
 }
 
 async function getNextEstimateNumber(prefix: string): Promise<string> {
-  const { data } = await supabase()
+  const { data, error } = await supabase()
     .from("quotes")
     .select("name")
     .ilike("name", `${prefix}%`)
     .order("created_at", { ascending: false })
     .limit(1);
+  if (error) console.error("[getNextEstimateNumber]", error.message);
 
   let nextNum = 1;
   if (data && data.length > 0) {

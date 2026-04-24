@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { toast } from "sonner";
 import { useQuoteBuilder } from "@/lib/contexts/QuoteBuilderContext";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -85,11 +86,12 @@ export default function Step3Customer() {
     setSearchQuery(q);
     if (q.trim().length < 2) { setSearchResults([]); return; }
     setSearching(true);
-    const { data } = await supabase()
+    const { data, error } = await supabase()
       .from("accounts")
       .select("id, name, email, phone, billing_city, billing_state")
       .ilike("name", `%${q}%`)
       .limit(10);
+    if (error) toast.error("Customer search failed: " + error.message);
     setSearchResults((data as AccountResult[]) ?? []);
     setSearching(false);
   }

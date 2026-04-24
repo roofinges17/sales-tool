@@ -138,11 +138,12 @@ function SaleDetailContent() {
 
   async function loadSale() {
     setLoading(true);
-    const { data } = await supabase()
+    const { data, error } = await supabase()
       .from("sales")
       .select("*, account:account_id(id, name), primary_seller:primary_seller_id(id, name), department:department_id(id, name), workflow_stage:workflow_stage_id(id, name, color, sort_order), sale_line_items(*), sale_payments(*), commission_entries(*, recipient:recipient_id(name))")
       .eq("id", saleId!)
       .single();
+    if (error && error.code !== "PGRST116") toast.error("Failed to load contract: " + error.message);
     const s = data as SaleDetail | null;
     setSale(s);
     if (s?.department) {
@@ -152,11 +153,12 @@ function SaleDetailContent() {
   }
 
   async function loadWorkflowLogs() {
-    const { data } = await supabase()
+    const { data, error } = await supabase()
       .from("workflow_logs")
       .select("*, from_stage:from_stage_id(name), to_stage:to_stage_id(name)")
       .eq("sale_id", saleId!)
       .order("created_at", { ascending: false });
+    if (error) toast.error("Failed to load workflow history: " + error.message);
     setWorkflowLogs((data as WorkflowLog[]) ?? []);
   }
 
