@@ -15,6 +15,7 @@ export interface Env {
   SUPABASE_URL: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
   GHL_PIT?: string;
+  FOLIO_CACHE?: KVNamespace;
 }
 
 const GHL_BASE = "https://services.leadconnectorhq.com";
@@ -103,9 +104,29 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     "Content-Type": "application/json",
   };
 
-  const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, GHL_PIT } = ctx.env;
+  const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, GHL_PIT, FOLIO_CACHE } = ctx.env;
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     return new Response(JSON.stringify({ error: "Server misconfigured" }), { status: 500, headers: corsHeaders });
+  }
+
+  // Body size guard — 2 MB (signature data URL is at most ~200 KB)
+  const cl = parseInt(ctx.request.headers.get("content-length") ?? "0");
+  if (cl > 2 * 1024 * 1024) {
+    return new Response(JSON.stringify({ error: "Request too large" }), { status: 413, headers: corsHeaders });
+  }
+
+  // IP rate limit — 10 requests / minute per IP
+  const ip =
+    ctx.request.headers.get("CF-Connecting-IP") ??
+    ctx.request.headers.get("X-Forwarded-For") ??
+    "unknown";
+  if (FOLIO_CACHE) {
+    const windowKey = `rl:accept:${ip}:${Math.floor(Date.now() / 60000)}`;
+    const count = parseInt((await FOLIO_CACHE.get(windowKey)) ?? "0");
+    if (count >= 10) {
+      return new Response(JSON.stringify({ error: "Rate limit exceeded" }), { status: 429, headers: corsHeaders });
+    }
+    await FOLIO_CACHE.put(windowKey, String(count + 1), { expirationTtl: 120 });
   }
 
   let body: { token?: string; signatureDataUrl?: string };
@@ -150,18 +171,30 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     return new Response(JSON.stringify({ error: "Invalid or expired token" }), { status: 404, headers: corsHeaders });
   }
 
-  // Idempotency — already processed
+  const quoteId = (quoteRow as { id: string }).id;
+
+  // KV idempotency fast-path — returns cached result for repeat or concurrent calls
+  if (FOLIO_CACHE) {
+    const cached = await FOLIO_CACHE.get(`idempotent:accept:${quoteId}`);
+    if (cached) {
+      return new Response(cached, { status: 200, headers: corsHeaders });
+    }
+  }
+
+  // DB-level idempotency — quote already accepted (slower path, no KV cache yet)
   if ((quoteRow as { accepted_at: string | null }).accepted_at) {
     const existingSale = await sb
       .from("sales")
-      .select("id")
-      .eq("quote_id", (quoteRow as { id: string }).id)
+      .select("id, contract_number")
+      .eq("quote_id", quoteId)
       .maybeSingle();
-    const saleId = (existingSale.data as { id: string } | null)?.id ?? null;
-    return new Response(JSON.stringify({ ok: true, alreadyAccepted: true, sale_id: saleId }), {
-      status: 200,
-      headers: corsHeaders,
-    });
+    const prevSaleId = (existingSale.data as { id: string; contract_number: string } | null)?.id ?? null;
+    const prevCn = (existingSale.data as { id: string; contract_number: string } | null)?.contract_number ?? "";
+    const payload = JSON.stringify({ ok: true, alreadyAccepted: true, sale_id: prevSaleId, contract_number: prevCn });
+    if (FOLIO_CACHE && prevSaleId) {
+      await FOLIO_CACHE.put(`idempotent:accept:${quoteId}`, payload, { expirationTtl: 86400 });
+    }
+    return new Response(payload, { status: 200, headers: corsHeaders });
   }
 
   const quote = quoteRow as {
@@ -279,6 +312,21 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     .single();
 
   if (saleErr || !sale) {
+    // 23505 = unique_violation — a concurrent request already created the sale
+    if ((saleErr as { code?: string } | null)?.code === "23505") {
+      const { data: existing } = await sb
+        .from("sales")
+        .select("id, contract_number")
+        .eq("quote_id", quote.id)
+        .maybeSingle();
+      const existingId = (existing as { id: string; contract_number: string } | null)?.id ?? null;
+      const existingCn = (existing as { id: string; contract_number: string } | null)?.contract_number ?? "";
+      const payload = JSON.stringify({ ok: true, alreadyAccepted: true, sale_id: existingId, contract_number: existingCn });
+      if (FOLIO_CACHE && existingId) {
+        await FOLIO_CACHE.put(`idempotent:accept:${quote.id}`, payload, { expirationTtl: 86400 });
+      }
+      return new Response(payload, { status: 200, headers: corsHeaders });
+    }
     console.error("[accept-automate] sale insert failed:", saleErr);
     return new Response(
       JSON.stringify({ error: "Failed to create contract record", detail: saleErr?.message }),
@@ -418,10 +466,14 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
 
   // ── Done ─────────────────────────────────────────────────────────────────
 
-  return new Response(
-    JSON.stringify({ ok: true, sale_id: saleId, contract_number: contractNumber }),
-    { status: 200, headers: corsHeaders },
-  );
+  const successPayload = JSON.stringify({ ok: true, sale_id: saleId, contract_number: contractNumber });
+
+  // Cache result so repeat / concurrent calls short-circuit without hitting DB
+  if (FOLIO_CACHE) {
+    await FOLIO_CACHE.put(`idempotent:accept:${quote.id}`, successPayload, { expirationTtl: 86400 });
+  }
+
+  return new Response(successPayload, { status: 200, headers: corsHeaders });
 };
 
 export const onRequestOptions: PagesFunction<Env> = async () => {
