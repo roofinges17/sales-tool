@@ -11,7 +11,7 @@
 import { createClient } from "@supabase/supabase-js";
 
 const CORS = { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" };
-const MODEL_ID = "gemini-2.5-flash-preview-04-17";
+const MODEL_ID = "gemini-2.5-flash-image-preview";
 
 interface Env {
   SUPABASE_URL?: string;
@@ -161,8 +161,7 @@ export async function onRequestPost(ctx: { request: Request; env: Env }) {
           ],
         }],
         generationConfig: {
-          response_mime_type: "image/jpeg",
-          responseModalities: ["IMAGE", "TEXT"],
+          responseModalities: ["IMAGE"],
         },
       }),
     });
