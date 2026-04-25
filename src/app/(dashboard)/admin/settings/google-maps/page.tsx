@@ -7,15 +7,45 @@ import IntegrationStatusCard, { type IntegrationStatus } from "@/components/sett
 const TEST_LAT = 25.7617;
 const TEST_LNG = -80.1918; // Miami — typical service area
 
+interface SolarUsage {
+  month: string;
+  used: number;
+  remaining: number;
+  quota: number;
+  resetDate: string;
+  cacheHits: number;
+  cacheMisses: number;
+  criticalFlagged: boolean;
+}
+
 export default function GoogleMapsPage() {
   const [solarStatus, setSolarStatus] = useState<IntegrationStatus>("checking");
   const [solarLabel, setSolarLabel] = useState("");
   const [solarChecked, setSolarChecked] = useState<Date | null>(null);
   const [solarChecking, setSolarChecking] = useState(false);
+  const [solarUsage, setSolarUsage] = useState<SolarUsage | null>(null);
+  const [usageError, setUsageError] = useState<string | null>(null);
 
   useEffect(() => {
     checkSolar();
+    fetchUsage();
   }, []);
+
+  async function fetchUsage() {
+    try {
+      const { data: { session } } = await supabase().auth.getSession();
+      const res = await fetch("/api/admin/solar-usage", {
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+      });
+      if (res.ok) {
+        setSolarUsage(await res.json() as SolarUsage);
+      } else {
+        setUsageError(`Error ${res.status}`);
+      }
+    } catch {
+      setUsageError("Failed to load usage");
+    }
+  }
 
   async function checkSolar() {
     setSolarChecking(true);
@@ -94,6 +124,74 @@ export default function GoogleMapsPage() {
           </a>
         </div>
       </IntegrationStatusCard>
+
+      {/* Solar API Quota */}
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 overflow-hidden">
+        <div className="px-6 py-5 border-b border-zinc-800 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-base font-semibold text-zinc-100">Solar API Quota</h2>
+            <p className="text-sm text-zinc-500 mt-0.5">Free tier · 100 calls/month · resets {solarUsage?.resetDate ?? "—"}</p>
+          </div>
+          {solarUsage?.criticalFlagged && (
+            <span className="shrink-0 inline-flex items-center rounded px-2 py-1 text-xs font-bold bg-red-900/50 text-red-300 border border-red-700/40">
+              CRITICAL
+            </span>
+          )}
+        </div>
+        <div className="p-6 space-y-4">
+          {usageError ? (
+            <p className="text-sm text-red-400">{usageError}</p>
+          ) : !solarUsage ? (
+            <p className="text-sm text-zinc-500">Loading…</p>
+          ) : (
+            <>
+              {/* Usage bar */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-zinc-400">{solarUsage.used} / {solarUsage.quota} API calls used</span>
+                  <span className={solarUsage.remaining <= 5 ? "text-red-400 font-semibold" : solarUsage.remaining <= 20 ? "text-amber-400" : "text-green-400"}>
+                    {solarUsage.remaining} remaining
+                  </span>
+                </div>
+                <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      solarUsage.used >= 95 ? "bg-red-500" : solarUsage.used >= 80 ? "bg-amber-500" : "bg-green-500"
+                    }`}
+                    style={{ width: `${Math.min(100, (solarUsage.used / solarUsage.quota) * 100)}%` }}
+                  />
+                </div>
+              </div>
+              {/* Cache stats */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-lg bg-zinc-800/60 px-3 py-2 text-center">
+                  <p className="text-[10px] text-zinc-500">Cache Hits</p>
+                  <p className="text-sm font-bold text-green-400">{solarUsage.cacheHits}</p>
+                </div>
+                <div className="rounded-lg bg-zinc-800/60 px-3 py-2 text-center">
+                  <p className="text-[10px] text-zinc-500">API Calls</p>
+                  <p className="text-sm font-bold text-zinc-100">{solarUsage.cacheMisses}</p>
+                </div>
+                <div className="rounded-lg bg-zinc-800/60 px-3 py-2 text-center">
+                  <p className="text-[10px] text-zinc-500">Month</p>
+                  <p className="text-sm font-bold text-zinc-100">{solarUsage.month}</p>
+                </div>
+              </div>
+              {solarUsage.criticalFlagged && (
+                <p className="text-xs text-red-400">
+                  95+ calls reached. New roof lookups return manual-entry prompt until {solarUsage.resetDate}.
+                </p>
+              )}
+              <button
+                onClick={fetchUsage}
+                className="text-xs font-medium text-brand hover:underline"
+              >
+                Refresh usage →
+              </button>
+            </>
+          )}
+        </div>
+      </div>
 
       {/* Places API */}
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 overflow-hidden">

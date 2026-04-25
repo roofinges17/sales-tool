@@ -5,3 +5,7 @@ pages_build_output_dir = "out"
 [[kv_namespaces]]
 binding = "FOLIO_CACHE"
 id = "3bc545a3f04c4623a4499cdeb2c972ba"
+
+[[kv_namespaces]]
+binding = "SOLAR_CACHE"
+id = "309257e1c85d47b6904d11f7493cf66f"

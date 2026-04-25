@@ -3,13 +3,17 @@
 // Displays the result of /api/address-intel in a compact info card.
 // Shown in Step 3 Customer (after address select) and on /measure.
 
+import { useState } from "react";
+
 export interface AddressIntelResult {
   roof?: {
-    totalSqft: number;
-    slopedSqft: number;
-    flatSqft: number;
-    pitch: string;
-    segmentCount: number;
+    totalSqft: number | null;
+    slopedSqft: number | null;
+    flatSqft: number | null;
+    pitch: string | null;
+    segmentCount: number | null;
+    source?: string;
+    resetDate?: string;
   } | null;
   folio?: string | null;
   floodZone?: string | null;
@@ -34,7 +38,8 @@ interface AddressIntelCardProps {
   loading?: boolean;
 }
 
-function fmt(n: number) {
+function fmt(n: number | null | undefined) {
+  if (n == null) return "—";
   return new Intl.NumberFormat("en-US").format(Math.round(n));
 }
 
@@ -53,7 +58,9 @@ function FloodZoneBadge({ zone }: { zone: string }) {
 
 export function AddressIntelCard({ data, onApplyMeasurements, loading }: AddressIntelCardProps) {
   const { roof, folio, floodZone, property, permits, hvhz } = data;
+  const [manualSqft, setManualSqft] = useState("");
   const hasData = roof || folio || floodZone || property;
+  const isManualEntry = roof?.source === "manual_entry_required";
 
   if (loading) {
     return (
@@ -87,8 +94,8 @@ export function AddressIntelCard({ data, onApplyMeasurements, loading }: Address
       </div>
 
       <div className="p-4 space-y-4">
-        {/* Roof measurements */}
-        {roof && (
+        {/* Roof measurements — auto-filled */}
+        {roof && !isManualEntry && (
           <div className="space-y-2">
             <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">Roof Measurements</p>
             <div className="grid grid-cols-3 gap-2">
@@ -102,7 +109,7 @@ export function AddressIntelCard({ data, onApplyMeasurements, loading }: Address
                 <p className="text-sm font-bold text-brand">{fmt(roof.slopedSqft)}</p>
                 <p className="text-[10px] text-zinc-600">sq ft</p>
               </div>
-              {roof.flatSqft > 0 ? (
+              {(roof.flatSqft ?? 0) > 0 ? (
                 <div className="rounded-lg bg-zinc-800/60 px-3 py-2 text-center">
                   <p className="text-[10px] text-zinc-500">Flat</p>
                   <p className="text-sm font-bold text-amber-400">{fmt(roof.flatSqft)}</p>
@@ -111,23 +118,60 @@ export function AddressIntelCard({ data, onApplyMeasurements, loading }: Address
               ) : (
                 <div className="rounded-lg bg-zinc-800/60 px-3 py-2 text-center">
                   <p className="text-[10px] text-zinc-500">Pitch</p>
-                  <p className="text-sm font-bold text-zinc-100">{roof.pitch}</p>
+                  <p className="text-sm font-bold text-zinc-100">{roof.pitch ?? "—"}</p>
                   <p className="text-[10px] text-zinc-600">{roof.segmentCount} seg</p>
                 </div>
               )}
             </div>
-            {roof.flatSqft > 0 && (
+            {(roof.flatSqft ?? 0) > 0 && (
               <p className="text-[10px] text-zinc-500">Avg pitch: {roof.pitch} · {roof.segmentCount} segments · incl. 2% waste</p>
             )}
-            {!roof.flatSqft && (
+            {!(roof.flatSqft ?? 0) && (
               <p className="text-[10px] text-zinc-500">Incl. 2% waste</p>
             )}
             {onApplyMeasurements && (
               <button
-                onClick={() => onApplyMeasurements({ slopedSqft: roof.slopedSqft, flatSqft: roof.flatSqft })}
+                onClick={() => onApplyMeasurements({ slopedSqft: roof.slopedSqft ?? 0, flatSqft: roof.flatSqft ?? 0 })}
                 className="w-full rounded-lg border border-brand/40 bg-brand/10 px-3 py-2 text-xs font-semibold text-brand hover:bg-brand/20 transition-colors"
               >
                 Apply measurements to quote
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Roof measurements — manual entry (solar quota exhausted) */}
+        {isManualEntry && (
+          <div className="space-y-2">
+            <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">Roof Measurements</p>
+            <div className="rounded-lg border border-amber-700/40 bg-amber-900/20 px-3 py-2.5 space-y-1">
+              <p className="text-xs font-semibold text-amber-300">Solar auto-measure unavailable</p>
+              <p className="text-[10px] text-amber-400/70">
+                Monthly Solar API quota reached. Enter roof sqft manually.
+                {roof.resetDate && ` Auto-measure resets ${roof.resetDate}.`}
+              </p>
+            </div>
+            <div className="flex gap-2 items-center">
+              <input
+                type="number"
+                min="0"
+                placeholder="e.g. 1800"
+                value={manualSqft}
+                onChange={(e) => setManualSqft(e.target.value)}
+                className="flex-1 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:border-brand focus:outline-none"
+              />
+              <span className="text-xs text-zinc-500 shrink-0">sq ft</span>
+            </div>
+            {onApplyMeasurements && (
+              <button
+                disabled={!manualSqft || parseInt(manualSqft, 10) <= 0}
+                onClick={() => {
+                  const sqft = parseInt(manualSqft, 10);
+                  if (sqft > 0) onApplyMeasurements({ slopedSqft: sqft, flatSqft: 0 });
+                }}
+                className="w-full rounded-lg border border-brand/40 bg-brand/10 px-3 py-2 text-xs font-semibold text-brand hover:bg-brand/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Apply manual measurement to quote
               </button>
             )}
           </div>

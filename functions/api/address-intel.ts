@@ -6,10 +6,15 @@
 // Output: { roof?, folio?, floodZone?, property?, hvhz }
 
 import { guard } from "./_guard";
+import {
+  SOLAR_QUOTA, SOLAR_WARN_AT, SOLAR_CRITICAL_AT,
+  solarCacheKey, solarMonthTag, solarUsageKey, solarHitsKey, solarResetDate,
+} from "./_solar-cache";
 
 export interface Env {
   GOOGLE_API_KEY: string;
   FOLIO_CACHE?: KVNamespace;
+  SOLAR_CACHE?: KVNamespace;
   SUPABASE_URL: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
 }
@@ -25,7 +30,6 @@ const FLAT_PITCH_THRESHOLD_DEG = 9.5;
 function isHVHZ(zip?: string): boolean {
   if (!zip) return false;
   const z = parseInt(zip.replace(/\D/g, "").slice(0, 5), 10);
-  // Miami-Dade: 33010–33299, various others; Broward: 33004, 33009–33029, 33060–33076, 33301–33394
   return (
     (z >= 33010 && z <= 33299) ||
     z === 33004 ||
@@ -52,7 +56,44 @@ interface RoofResult {
   segmentCount: number;
 }
 
-async function fetchRoofData(lat: number, lng: number, apiKey: string): Promise<RoofResult | null> {
+async function fetchRoofData(
+  lat: number,
+  lng: number,
+  apiKey: string,
+  solarCache?: KVNamespace,
+): Promise<RoofResult | "quota_exhausted" | null> {
+  const month = solarMonthTag();
+  const cKey = solarCacheKey(lat, lng);
+  const usageKey = solarUsageKey(month);
+  const hitsKey = solarHitsKey(month);
+
+  // Cache hit — free, no quota consumed
+  if (solarCache) {
+    const cached = await solarCache.get(cKey, "json") as RoofResult | null;
+    if (cached) {
+      solarCache.get(hitsKey).then((v) =>
+        solarCache.put(hitsKey, String(parseInt(v ?? "0", 10) + 1))
+      );
+      return cached;
+    }
+  }
+
+  // Quota check
+  if (solarCache) {
+    const countStr = await solarCache.get(usageKey);
+    const count = parseInt(countStr ?? "0", 10);
+    if (count >= SOLAR_QUOTA) {
+      console.error(`[address-intel] solar quota_exhausted: ${count}/${SOLAR_QUOTA} for ${month}`);
+      return "quota_exhausted";
+    }
+    if (count >= SOLAR_CRITICAL_AT) {
+      console.error(`[address-intel] solar quota_critical: ${count + 1}/${SOLAR_QUOTA} for ${month}`);
+      solarCache.put(`SOLAR_CRITICAL_${month}`, "1");
+    } else if (count >= SOLAR_WARN_AT) {
+      console.warn(`[address-intel] solar quota_warning: ${count + 1}/${SOLAR_QUOTA} for ${month}`);
+    }
+  }
+
   try {
     for (const quality of ["HIGH", "MEDIUM"]) {
       const url =
@@ -89,13 +130,25 @@ async function fetchRoofData(lat: number, lng: number, apiKey: string): Promise<
       const pitch = pitchRatio > 0 ? `${pitchRatio}/12` : "0/12";
       const slopedWithWaste = Math.round(slopedSqFt * WASTE_FACTOR);
       const flatWithWaste = Math.round(flatSqFt * WASTE_FACTOR);
-      return {
+      const result: RoofResult = {
         totalSqft: slopedWithWaste + flatWithWaste,
         slopedSqft: slopedWithWaste,
         flatSqft: flatWithWaste,
         pitch,
         segmentCount: segments.length,
       };
+
+      // Cache result + increment counter
+      if (solarCache) {
+        const countStr = await solarCache.get(usageKey);
+        const count = parseInt(countStr ?? "0", 10);
+        await Promise.all([
+          solarCache.put(usageKey, String(count + 1)),
+          solarCache.put(cKey, JSON.stringify(result)),
+        ]);
+      }
+
+      return result;
     }
     return null;
   } catch {
@@ -135,7 +188,6 @@ async function fetchFolio(
       if (cached?.folio) return cached.folio;
     }
 
-    // Miami-Dade GIS ArcGIS lookup
     const street = address.split(",")[0].trim().toUpperCase();
     const parts = street.split(/\s+/);
     if (parts.length < 2) return null;
@@ -261,9 +313,6 @@ interface PermitSummary {
 }
 
 async function fetchRecentPermits(folio: string): Promise<PermitSummary[]> {
-  // Miami-Dade building department doesn't expose a public JSON REST API for permits.
-  // Best-effort HTML scrape of their public permit search portal.
-  // Returns empty array on any failure — never blocks the intel response.
   try {
     const url = `https://egov.miamidade.gov/buildingpermits/Default.aspx?folio=${encodeURIComponent(folio)}`;
     const res = await fetch(url, {
@@ -274,13 +323,9 @@ async function fetchRecentPermits(folio: string): Promise<PermitSummary[]> {
     });
     if (!res.ok) return [];
     const html = await res.text();
-
-    // Look for permit number patterns in the HTML: B-YYYY-NNNNNN format
     const permitPattern = /B-\d{4}-\d{6}/g;
     const matches = html.match(permitPattern);
     if (!matches) return [];
-
-    // Deduplicate and return the most recent 3
     return [...new Set(matches)].slice(0, 3).map((permitNo) => ({
       permitNo,
       permitType: "Building",
@@ -299,7 +344,7 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
   const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
     "Content-Type": "application/json",
-    "Cache-Control": "public, max-age=86400", // 24h — property data doesn't change daily
+    "Cache-Control": "public, max-age=86400",
   };
 
   const { error: guardErr } = await guard(ctx.request, ctx.env, {
@@ -309,7 +354,7 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
   });
   if (guardErr) return guardErr;
 
-  const { GOOGLE_API_KEY, FOLIO_CACHE } = ctx.env;
+  const { GOOGLE_API_KEY, FOLIO_CACHE, SOLAR_CACHE } = ctx.env;
 
   let body: { address?: string; lat?: number; lng?: number; zip?: string };
   try {
@@ -326,9 +371,9 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     );
   }
 
-  // Full-result cache keyed by normalized address — same KV namespace as folio cache
+  // Full-result cache — only caches when we have real roof data (not quota_exhausted)
   const intelCacheKey = `intel:${address.toLowerCase().replace(/\s+/g, " ").trim()}`;
-  const INTEL_TTL = 60 * 60 * 24; // 24h
+  const INTEL_TTL = 60 * 60 * 24;
 
   if (FOLIO_CACHE) {
     const cached = await FOLIO_CACHE.get(intelCacheKey, "json");
@@ -340,14 +385,12 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     }
   }
 
-  // Phase 1: parallel — roof + flood zone + folio
-  const [roof, floodZone, folio] = await Promise.all([
-    GOOGLE_API_KEY ? fetchRoofData(lat, lng, GOOGLE_API_KEY) : Promise.resolve(null),
+  const [roofResult, floodZone, folio] = await Promise.all([
+    GOOGLE_API_KEY ? fetchRoofData(lat, lng, GOOGLE_API_KEY, SOLAR_CACHE) : Promise.resolve(null),
     fetchFloodZone(lat, lng),
     fetchFolio(address, zip, FOLIO_CACHE),
   ]);
 
-  // Phase 2: sequential on folio — property details + permits
   let property: PropertyDetails | null = null;
   let permits: PermitSummary[] = [];
   if (folio) {
@@ -357,20 +400,16 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     ]);
   }
 
-  const result = {
-    roof,
-    folio,
-    floodZone,
-    property,
-    permits,
-    hvhz: isHVHZ(zip),
-  };
+  const quotaExhausted = roofResult === "quota_exhausted";
+  const roof = quotaExhausted
+    ? { source: "manual_entry_required" as const, totalSqft: null, slopedSqft: null, flatSqft: null, pitch: null, segmentCount: null, resetDate: solarResetDate() }
+    : roofResult;
 
-  // Cache only when we got at least some data back
-  if (FOLIO_CACHE && (roof || folio || floodZone)) {
-    await FOLIO_CACHE.put(intelCacheKey, JSON.stringify(result), {
-      expirationTtl: INTEL_TTL,
-    });
+  const result = { roof, folio, floodZone, property, permits, hvhz: isHVHZ(zip) };
+
+  // Don't cache when quota exhausted — next request should retry Solar after quota resets
+  if (!quotaExhausted && FOLIO_CACHE && (roof || folio || floodZone)) {
+    await FOLIO_CACHE.put(intelCacheKey, JSON.stringify(result), { expirationTtl: INTEL_TTL });
   }
 
   return new Response(JSON.stringify(result), { status: 200, headers: corsHeaders });

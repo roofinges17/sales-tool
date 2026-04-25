@@ -1,14 +1,19 @@
 import { guard } from "./_guard";
+import {
+  SOLAR_QUOTA, SOLAR_WARN_AT, SOLAR_CRITICAL_AT,
+  solarCacheKey, solarMonthTag, solarUsageKey, solarHitsKey, solarResetDate,
+} from "./_solar-cache";
 
 export interface Env {
   GOOGLE_API_KEY: string;
+  SOLAR_CACHE?: KVNamespace;
   SUPABASE_URL: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
 }
 
 const SQ_M_TO_SQ_FT = 10.7639;
 const WASTE_FACTOR = 1.02;
-const FLAT_PITCH_THRESHOLD_DEG = 9.5; // <= ~2/12 pitch
+const FLAT_PITCH_THRESHOLD_DEG = 9.5;
 
 interface SizeAndSunshineStats {
   areaMeters2: number;
@@ -95,11 +100,57 @@ export const onRequestGet: PagesFunction<Env> = async (ctx) => {
     });
   }
 
-  const cors = {
+  const cors: Record<string, string> = {
     "Content-Type": "application/json",
     "Cache-Control": "no-store",
   };
 
+  const latN = parseFloat(lat);
+  const lngN = parseFloat(lng);
+  const solarCache = ctx.env.SOLAR_CACHE;
+  const month = solarMonthTag();
+  const cacheKey = solarCacheKey(latN, lngN);
+  const usageKey = solarUsageKey(month);
+  const hitsKey = solarHitsKey(month);
+
+  // ── Cache hit ────────────────────────────────────────────────────────────────
+  if (solarCache) {
+    const cached = await solarCache.get(cacheKey, "json");
+    if (cached) {
+      // Increment hit counter (fire-and-forget)
+      solarCache.get(hitsKey).then((v) =>
+        solarCache.put(hitsKey, String((parseInt(v ?? "0", 10)) + 1))
+      );
+      return new Response(JSON.stringify(cached), {
+        status: 200,
+        headers: { ...cors, "X-Solar-Cache": "HIT" },
+      });
+    }
+  }
+
+  // ── Quota check ──────────────────────────────────────────────────────────────
+  if (solarCache) {
+    const countStr = await solarCache.get(usageKey);
+    const count = parseInt(countStr ?? "0", 10);
+
+    if (count >= SOLAR_QUOTA) {
+      console.error(`[solar] quota_exhausted: ${count}/${SOLAR_QUOTA} for ${month}`);
+      return new Response(
+        JSON.stringify({ error: "solar_quota_exhausted", resetDate: solarResetDate() }),
+        { status: 429, headers: cors },
+      );
+    }
+
+    if (count >= SOLAR_CRITICAL_AT) {
+      console.error(`[solar] quota_critical: ${count + 1}/${SOLAR_QUOTA} for ${month}`);
+      // Store flag for admin endpoint to surface; Telegram requires external webhook (Phase 7)
+      solarCache.put(`SOLAR_CRITICAL_${month}`, "1");
+    } else if (count >= SOLAR_WARN_AT) {
+      console.warn(`[solar] quota_warning: ${count + 1}/${SOLAR_QUOTA} for ${month}`);
+    }
+  }
+
+  // ── Live Solar API call ───────────────────────────────────────────────────────
   try {
     let data: SolarResponse | null = null;
 
@@ -117,7 +168,7 @@ export const onRequestGet: PagesFunction<Env> = async (ctx) => {
       }
 
       if (res.status === 404 && quality === "HIGH") {
-        continue; // retry with MEDIUM
+        continue;
       }
 
       const errorBody = await res.text();
@@ -133,7 +184,21 @@ export const onRequestGet: PagesFunction<Env> = async (ctx) => {
     }
 
     const result = processSegments(data.solarPotential.roofSegmentStats);
-    return new Response(JSON.stringify(result), { status: 200, headers: cors });
+
+    // Increment usage counter + cache result
+    if (solarCache) {
+      const countStr = await solarCache.get(usageKey);
+      const count = parseInt(countStr ?? "0", 10);
+      await Promise.all([
+        solarCache.put(usageKey, String(count + 1)),
+        solarCache.put(cacheKey, JSON.stringify(result)),
+      ]);
+    }
+
+    return new Response(JSON.stringify(result), {
+      status: 200,
+      headers: { ...cors, "X-Solar-Cache": "MISS" },
+    });
   } catch (err) {
     console.error("Solar API error:", err);
     const message = err instanceof Error ? err.message : "Failed to fetch roof measurements";
