@@ -678,7 +678,7 @@ export default function Step6Generate() {
                     key={color.name}
                     title={color.name}
                     onClick={() => setVizColor(color.name)}
-                    className={`flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs border transition-all ${
+                    className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs border transition-all ${
                       vizColor === color.name
                         ? "border-white bg-zinc-800 text-zinc-100"
                         : "border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-500"
@@ -697,7 +697,7 @@ export default function Step6Generate() {
                 <button
                   key={f}
                   onClick={() => setVizFinish(f)}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-medium border transition-all ${
+                  className={`rounded-lg px-3 py-2.5 text-xs font-medium border transition-all min-h-[40px] ${
                     vizFinish === f
                       ? "border-white bg-zinc-800 text-zinc-100"
                       : "border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-500"
