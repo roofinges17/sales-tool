@@ -283,7 +283,7 @@ export default function CommissionsPage() {
         {selectedEntry && (
           <div className="space-y-4">
             {/* Metric cards */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-3 text-center">
                 <p className="text-xs text-zinc-500">Total Owed</p>
                 <p className="text-lg font-bold text-zinc-50 mt-1">{formatCurrency(selectedEntry.amount)}</p>

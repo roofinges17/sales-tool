@@ -39,9 +39,9 @@ export default function Step4Review() {
         <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 divide-y divide-zinc-800">
           <div className="px-4 py-3 flex text-xs font-medium uppercase tracking-wider text-zinc-500">
             <span className="flex-1">Item</span>
-            <span className="w-16 text-center">Qty</span>
-            <span className="w-24 text-right">Unit Price</span>
-            <span className="w-24 text-right">Total</span>
+            <span className="w-12 sm:w-16 text-center">Qty</span>
+            <span className="hidden sm:block w-24 text-right">Unit Price</span>
+            <span className="w-20 sm:w-24 text-right">Total</span>
           </div>
           {state.cart.map((item) => (
             <div key={item.product_id} className="px-4 py-3 flex items-center gap-2">
@@ -49,9 +49,9 @@ export default function Step4Review() {
                 <p className="text-sm text-zinc-100 font-medium">{item.product_name}</p>
                 {item.unit && <p className="text-xs text-zinc-500">{item.unit}</p>}
               </div>
-              <span className="w-16 text-center text-sm text-zinc-400">{item.quantity}</span>
-              <span className="w-24 text-right text-sm text-zinc-300">{formatCurrency(item.unit_price)}</span>
-              <span className="w-24 text-right text-sm font-medium text-zinc-100">{formatCurrency(item.line_total)}</span>
+              <span className="w-12 sm:w-16 text-center text-sm text-zinc-400">{item.quantity}</span>
+              <span className="hidden sm:block w-24 text-right text-sm text-zinc-300">{formatCurrency(item.unit_price)}</span>
+              <span className="w-20 sm:w-24 text-right text-sm font-medium text-zinc-100">{formatCurrency(item.line_total)}</span>
             </div>
           ))}
           <div className="px-4 py-3 flex justify-between">

@@ -306,7 +306,7 @@ export default function CommissionPlansPage() {
                   Total: {baseProfitTotal.toFixed(1)}%{!pctValid && " (must = 100%)"}
                 </span>
               </div>
-              <div className="grid grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <Input label="Manager %" type="number" step="0.1"
                   value={editing.manager_percentage}
                   onChange={(e) => upd("manager_percentage", Number(e.target.value))} />
