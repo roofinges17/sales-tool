@@ -14,10 +14,9 @@ interface QuoteRow {
   accepted_at: string | null;
   signed_at: string | null;
   customer_signature_data_url: string | null;
-  accept_token: string | null;
   roof_color?: string | null;
   visualizer_image_url?: string | null;
-  account?: { name: string } | null;
+  account_name?: string | null;
 }
 
 function formatCurrency(n: number) {
@@ -173,10 +172,8 @@ export default function AcceptPage() {
       }
 
       const { data, error } = await supabase()
-        .from("quotes")
-        .select("id, name, total, status, accepted_at, signed_at, customer_signature_data_url, accept_token, roof_color, visualizer_image_url, account:account_id(name)")
-        .eq("accept_token", token)
-        .maybeSingle();
+        .rpc("get_quote_by_accept_token", { p_token: token })
+        .single();
 
       if (error || !data) {
         setStatus("error");
@@ -184,7 +181,7 @@ export default function AcceptPage() {
         return;
       }
 
-      const row = data as unknown as QuoteRow;
+      const row = data as QuoteRow;
 
       if (row.accepted_at) {
         setQuote(row);
@@ -237,7 +234,7 @@ export default function AcceptPage() {
     }
   }
 
-  const customerName = quote?.account?.name ?? null;
+  const customerName = quote?.account_name ?? null;
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-950 px-4 py-8">
