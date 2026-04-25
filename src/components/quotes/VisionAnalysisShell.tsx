@@ -253,7 +253,7 @@ export default function VisionAnalysisShell<TItem>({
             <div className="space-y-3">
               {mock && (
                 <div className="rounded-lg border border-amber-800/40 bg-amber-950/20 px-3 py-2 text-xs text-amber-400">
-                  Demo mode — add OPENAI_API_KEY to Cloudflare Pages env to enable real analysis.
+                  Demo mode — add GEMINI_API_KEY to Cloudflare Pages env to enable real analysis.
                 </div>
               )}
 
