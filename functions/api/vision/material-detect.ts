@@ -1,6 +1,6 @@
 // POST /api/vision/material-detect
 // Analyzes exterior house photos for soffit, fascia, gutter condition, color, and linear footage.
-// Uses GPT-4o vision. Falls back to mock when OPENAI_API_KEY is not set.
+// Uses Gemini Flash Vision. Falls back to mock when GEMINI_API_KEY is not set.
 //
 // Input:  { photos: Array<{ base64: string; mediaType: string }>, material_type?: "soffit" | "fascia" | "gutter" | "all" }
 // Output: { items: MaterialItem[], totalLinearFt: number, model: string, mock?: true }
@@ -8,9 +8,9 @@
 import { guard } from "../_guard";
 
 export interface Env {
-  OPENAI_API_KEY?: string;
-  SUPABASE_URL?: string;
-  SUPABASE_SERVICE_ROLE_KEY?: string;
+  GEMINI_API_KEY?: string;
+  SUPABASE_URL: string;
+  SUPABASE_SERVICE_ROLE_KEY: string;
   FOLIO_CACHE?: KVNamespace;
 }
 
@@ -31,6 +31,8 @@ interface DetectResponse {
   model: string;
   mock?: boolean;
 }
+
+const GEMINI_MODEL = "gemini-2.0-flash";
 
 const SYSTEM_PROMPT = `You are a professional roofing contractor and materials estimator. Analyze exterior house photos to assess soffit, fascia, and gutter condition, color, and linear footage.
 
@@ -63,7 +65,7 @@ const USER_PROMPT = `Analyze the exterior photo(s) of this house. Identify and e
 
 const MOCK_RESPONSE: DetectResponse = {
   mock: true,
-  model: "gpt-4o (mock)",
+  model: `${GEMINI_MODEL} (mock)`,
   totalLinearFt: 148,
   items: [
     {
@@ -129,7 +131,7 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     });
   }
 
-  const apiKey = ctx.env.OPENAI_API_KEY;
+  const apiKey = ctx.env.GEMINI_API_KEY;
   if (!apiKey) {
     return new Response(JSON.stringify(MOCK_RESPONSE), { status: 200, headers: corsHeaders });
   }
@@ -138,55 +140,49 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     ? `\n\nFocus especially on: ${body.material_type}. Still report any other visible components.`
     : "";
 
-  const imageContent = photos.slice(0, 4).map((photo) => ({
-    type: "image_url",
-    image_url: {
-      url: `data:${photo.mediaType};base64,${photo.base64}`,
-      detail: "high",
+  const imageParts = photos.slice(0, 4).map((photo) => ({
+    inlineData: {
+      mimeType: photo.mediaType,
+      data: photo.base64,
     },
   }));
 
-  const openaiBody = {
-    model: "gpt-4o",
-    max_tokens: 1024,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      {
-        role: "user",
-        content: [
-          ...imageContent,
-          { type: "text", text: USER_PROMPT + materialHint },
-        ],
-      },
-    ],
+  const geminiBody = {
+    systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    contents: [{
+      parts: [...imageParts, { text: USER_PROMPT + materialHint }],
+    }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      maxOutputTokens: 1024,
+    },
   };
 
   try {
-    const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(geminiBody),
       },
-      body: JSON.stringify(openaiBody),
-    });
+    );
 
-    if (!openaiRes.ok) {
-      const errText = await openaiRes.text();
-      console.error("[material-detect] OpenAI error:", openaiRes.status, errText);
+    if (!geminiRes.ok) {
+      const errText = await geminiRes.text();
+      console.error("[material-detect] Gemini error:", geminiRes.status, errText);
       return new Response(
-        JSON.stringify({ error: `OpenAI API error ${openaiRes.status}` }),
+        JSON.stringify({ error: `Gemini API error ${geminiRes.status}` }),
         { status: 502, headers: corsHeaders },
       );
     }
 
-    const completion = (await openaiRes.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-      model?: string;
+    const completion = (await geminiRes.json()) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      modelVersion?: string;
     };
 
-    const content = completion?.choices?.[0]?.message?.content ?? "{}";
+    const content = completion?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
     const parsed = JSON.parse(content) as {
       items?: MaterialItem[];
       totalLinearFt?: number;
@@ -195,7 +191,7 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     const result: DetectResponse = {
       items: parsed.items ?? [],
       totalLinearFt: parsed.totalLinearFt ?? 0,
-      model: completion.model ?? "gpt-4o",
+      model: completion.modelVersion ?? GEMINI_MODEL,
     };
 
     return new Response(JSON.stringify(result), { status: 200, headers: corsHeaders });

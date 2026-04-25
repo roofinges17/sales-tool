@@ -1,7 +1,7 @@
 // POST /api/voice/transcribe-estimate
-// Accepts base64 audio (webm/mp4/m4a from MediaRecorder), transcribes via Whisper,
-// then extracts roofing estimate line items via GPT-4o.
-// Falls back to mock when OPENAI_API_KEY is not set.
+// Accepts base64 audio (webm/mp4/m4a from MediaRecorder), transcribes and extracts
+// roofing estimate line items via a single Gemini Flash audio call.
+// Falls back to mock when GEMINI_API_KEY is not set.
 //
 // Input:  { audio: string (base64), mimeType: string, fileName?: string }
 // Output: { transcript: string, items: VoiceItem[], model: string, mock?: true }
@@ -9,9 +9,9 @@
 import { guard } from "../_guard";
 
 export interface Env {
-  OPENAI_API_KEY?: string;
-  SUPABASE_URL?: string;
-  SUPABASE_SERVICE_ROLE_KEY?: string;
+  GEMINI_API_KEY?: string;
+  SUPABASE_URL: string;
+  SUPABASE_SERVICE_ROLE_KEY: string;
   FOLIO_CACHE?: KVNamespace;
 }
 
@@ -30,10 +30,13 @@ interface TranscribeResponse {
   mock?: boolean;
 }
 
-const EXTRACTION_SYSTEM_PROMPT = `You are a roofing estimator assistant. Extract structured line items from this roofing contractor's voice memo.
+const GEMINI_MODEL = "gemini-2.0-flash";
 
-Return ONLY valid JSON matching this schema — no prose, no fences:
+const SYSTEM_PROMPT = `You are a roofing estimator assistant. Listen to the audio recording of a roofing contractor describing damage observations and work to be done.
+
+Respond ONLY with valid JSON matching this schema — no prose, no markdown fences:
 {
+  "transcript": "<verbatim transcription of the audio>",
   "items": [
     {
       "description": string,
@@ -59,6 +62,7 @@ Rules for suggested_sku — map each item to one of these product codes when app
 
 If quantity is not mentioned, make a reasonable estimate based on context (e.g. "whole roof" → 1500 sq ft). Use common roofing units: sq ft for area, lf for linear footage, each for discrete items.
 
+If the audio is silent or unintelligible, return transcript as empty string and items as empty array.
 Return an empty items array if no actionable line items can be extracted.`;
 
 // ── Mock response ─────────────────────────────────────────────────────────────
@@ -68,7 +72,7 @@ const MOCK_TRANSCRIPT =
 
 const MOCK_RESPONSE: TranscribeResponse = {
   mock: true,
-  model: "whisper-1 + gpt-4o (mock)",
+  model: `${GEMINI_MODEL} (mock)`,
   transcript: MOCK_TRANSCRIPT,
   items: [
     {
@@ -111,7 +115,7 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
   };
 
   const { error: guardErr } = await guard(ctx.request, ctx.env, {
-    maxBodyBytes: 25 * 1024 * 1024, // 25 MB — Whisper file limit
+    maxBodyBytes: 25 * 1024 * 1024, // 25 MB — audio file limit
     ratePrefix: "voice",
     rateLimit: 20,
   });
@@ -131,121 +135,76 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     });
   }
 
-  const apiKey = ctx.env.OPENAI_API_KEY;
+  const apiKey = ctx.env.GEMINI_API_KEY;
   if (!apiKey) {
     return new Response(JSON.stringify(MOCK_RESPONSE), { status: 200, headers: corsHeaders });
   }
 
-  // ── Step 1: Whisper transcription ────────────────────────────────────────────
-
   const mimeType = body.mimeType ?? "audio/webm";
-  // Derive file extension — Whisper requires a filename with valid extension
-  const extMap: Record<string, string> = {
-    "audio/webm": "webm",
-    "audio/mp4": "mp4",
-    "audio/m4a": "m4a",
-    "audio/mpeg": "mp3",
-    "audio/ogg": "ogg",
-    "audio/wav": "wav",
+
+  const geminiBody = {
+    systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    contents: [{
+      parts: [
+        { inlineData: { mimeType, data: body.audio } },
+        { text: "Transcribe the audio and extract roofing estimate line items." },
+      ],
+    }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      maxOutputTokens: 2048,
+    },
   };
-  const ext = extMap[mimeType] ?? "webm";
-  const fileName = body.fileName ?? `recording.${ext}`;
 
-  let transcript = "";
   try {
-    // Decode base64 → binary
-    const binaryStr = atob(body.audio);
-    const bytes = new Uint8Array(binaryStr.length);
-    for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-    const audioBlob = new Blob([bytes], { type: mimeType });
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(geminiBody),
+      },
+    );
 
-    const formData = new FormData();
-    formData.append("file", audioBlob, fileName);
-    formData.append("model", "whisper-1");
-    formData.append("language", "en");
-
-    const whisperRes = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}` },
-      body: formData,
-    });
-
-    if (!whisperRes.ok) {
-      const errText = await whisperRes.text();
-      console.error("[voice] Whisper error:", whisperRes.status, errText);
+    if (!geminiRes.ok) {
+      const errText = await geminiRes.text();
+      console.error("[voice] Gemini error:", geminiRes.status, errText);
       return new Response(
-        JSON.stringify({ error: `Whisper API error ${whisperRes.status}` }),
+        JSON.stringify({ error: `Gemini API error ${geminiRes.status}` }),
         { status: 502, headers: corsHeaders },
       );
     }
 
-    const whisperData = (await whisperRes.json()) as { text?: string };
-    transcript = whisperData.text?.trim() ?? "";
-  } catch (err) {
-    console.error("[voice] Whisper fetch error:", err);
-    return new Response(JSON.stringify({ error: "Transcription failed" }), {
-      status: 500,
-      headers: corsHeaders,
-    });
-  }
+    const completion = (await geminiRes.json()) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      modelVersion?: string;
+    };
 
-  if (!transcript) {
-    return new Response(
-      JSON.stringify({ transcript: "", items: [], model: "whisper-1", mock: false }),
-      { status: 200, headers: corsHeaders },
-    );
-  }
+    const content = completion?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+    const parsed = JSON.parse(content) as { transcript?: string; items?: VoiceItem[] };
 
-  // ── Step 2: GPT-4o extraction ─────────────────────────────────────────────────
+    const transcript = parsed.transcript?.trim() ?? "";
 
-  try {
-    const gptRes = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o",
-        max_tokens: 1024,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: EXTRACTION_SYSTEM_PROMPT },
-          { role: "user", content: transcript },
-        ],
-      }),
-    });
-
-    if (!gptRes.ok) {
-      const errText = await gptRes.text();
-      console.error("[voice] GPT-4o error:", gptRes.status, errText);
-      // Return transcript with empty items rather than failing entirely
+    if (!transcript) {
       return new Response(
-        JSON.stringify({ transcript, items: [], model: "whisper-1", mock: false }),
+        JSON.stringify({ transcript: "", items: [], model: completion.modelVersion ?? GEMINI_MODEL }),
         { status: 200, headers: corsHeaders },
       );
     }
 
-    const completion = (await gptRes.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-      model?: string;
-    };
-    const content = completion?.choices?.[0]?.message?.content ?? "{}";
-    const parsed = JSON.parse(content) as { items?: VoiceItem[] };
-
     const result: TranscribeResponse = {
       transcript,
       items: parsed.items ?? [],
-      model: completion.model ?? "gpt-4o",
+      model: completion.modelVersion ?? GEMINI_MODEL,
     };
 
     return new Response(JSON.stringify(result), { status: 200, headers: corsHeaders });
   } catch (err) {
-    console.error("[voice] GPT-4o fetch error:", err);
-    return new Response(
-      JSON.stringify({ transcript, items: [], model: "whisper-1", mock: false }),
-      { status: 200, headers: corsHeaders },
-    );
+    console.error("[voice] Gemini fetch error:", err);
+    return new Response(JSON.stringify({ error: "Transcription failed" }), {
+      status: 500,
+      headers: corsHeaders,
+    });
   }
 };
 
