@@ -25,6 +25,9 @@ export default function UpdatePasswordPage() {
           }
         });
       }
+    }).catch(() => {
+      setError("Could not verify reset link. Please request a new password reset.");
+      setReady(true);
     });
   }, []);
 

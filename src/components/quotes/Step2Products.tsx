@@ -52,19 +52,23 @@ export default function Step2Products() {
 
   useEffect(() => {
     if (!state.departmentId) return;
-    // Sellers query the seller view (no cost column); managers+ query base table
     const table = isSeller ? "products_seller_view" : "products";
-    supabase()
-      .from(table)
-      .select("*")
-      .eq("department_id", state.departmentId)
-      .eq("is_active", true)
-      .order("name")
-      .then(({ data, error }) => {
+    (async () => {
+      try {
+        const { data, error } = await supabase()
+          .from(table)
+          .select("*")
+          .eq("department_id", state.departmentId)
+          .eq("is_active", true)
+          .order("name");
         if (error) console.error("[Step2Products] load failed:", error.message);
         setProducts((data as Product[]) ?? []);
+      } catch (err) {
+        console.error("[Step2Products] network error:", err);
+      } finally {
         setLoading(false);
-      });
+      }
+    })();
   }, [state.departmentId, isSeller]);
 
   const filteredProducts = products.filter((p) => {

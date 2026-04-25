@@ -185,7 +185,7 @@ export function QuoteBuilderProvider({ children }: { children: React.ReactNode }
   useEffect(() => {
     supabase().auth.getUser().then(({ data }) => {
       setUserId(data.user?.id ?? null);
-    });
+    }).catch(() => { /* auth unavailable — draft autosave disabled */ });
   }, []);
 
   const draftKey = userId

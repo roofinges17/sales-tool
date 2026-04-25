@@ -16,7 +16,8 @@ export default function LoginPage() {
       .auth.getSession()
       .then(({ data }) => {
         if (data.session) window.location.href = "/";
-      });
+      })
+      .catch(() => { /* network error — stay on login page */ });
   }, []);
 
   const emailInvalid = emailTouched && !email.includes("@");
