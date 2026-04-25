@@ -333,12 +333,13 @@ function QuoteDetailContent() {
 
   async function addNote() {
     if (!newNote.trim()) return;
-    await supabase().from("quote_notes").insert({
+    const { error } = await supabase().from("quote_notes").insert({
       quote_id: quoteId,
       author_id: user?.id,
       author_name: "You",
       content: newNote.trim(),
     });
+    if (error) { toast.error("Failed to save note: " + error.message); return; }
     setNewNote("");
     loadNotes();
   }

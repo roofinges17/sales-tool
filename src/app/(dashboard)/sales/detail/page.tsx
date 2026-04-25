@@ -183,14 +183,16 @@ function SaleDetailContent() {
     if (!selectedStageId || !sale) return;
     setMovingStage(true);
     const currentStageId = (sale.workflow_stage as { id?: string } | null)?.id;
-    await supabase().from("sales").update({ workflow_stage_id: selectedStageId }).eq("id", saleId!);
-    await supabase().from("workflow_logs").insert({
+    const { error: stageErr } = await supabase().from("sales").update({ workflow_stage_id: selectedStageId }).eq("id", saleId!);
+    if (stageErr) { toast.error("Failed to move stage: " + stageErr.message); setMovingStage(false); return; }
+    const { error: logErr } = await supabase().from("workflow_logs").insert({
       sale_id: saleId,
       from_stage_id: currentStageId ?? null,
       to_stage_id: selectedStageId,
       moved_by_id: user?.id,
       moved_by_name: "You",
     });
+    if (logErr) console.error("workflow_logs insert failed:", logErr.message);
     setSelectedStageId("");
     await loadSale();
     await loadWorkflowLogs();

@@ -268,7 +268,7 @@ export function AccountDetailClient({ id }: { id: string }) {
     e.preventDefault();
     if (!contactForm.first_name.trim() || !contactForm.last_name.trim()) return;
     setSavingContact(true);
-    await supabase().from("contacts").insert({
+    const { error: contactErr } = await supabase().from("contacts").insert({
       account_id: id,
       first_name: contactForm.first_name.trim(),
       last_name: contactForm.last_name.trim(),
@@ -280,6 +280,7 @@ export function AccountDetailClient({ id }: { id: string }) {
       notes: contactForm.notes.trim() || null,
     });
     setSavingContact(false);
+    if (contactErr) { toast.error("Failed to save contact: " + contactErr.message); return; }
     setContactModalOpen(false);
     setContactForm(initialContact);
     const { data, error: cErr } = await supabase().from("contacts").select("*").eq("account_id", id).order("is_primary", { ascending: false });
@@ -291,7 +292,7 @@ export function AccountDetailClient({ id }: { id: string }) {
     e.preventDefault();
     if (!propertyForm.street.trim() || !propertyForm.city.trim() || !propertyForm.state.trim() || !propertyForm.zip_code.trim()) return;
     setSavingProperty(true);
-    await supabase().from("properties").insert({
+    const { error: propertyErr } = await supabase().from("properties").insert({
       account_id: id,
       name: propertyForm.name.trim() || null,
       street: propertyForm.street.trim(),
@@ -305,6 +306,7 @@ export function AccountDetailClient({ id }: { id: string }) {
       is_primary: propertyForm.is_primary,
     });
     setSavingProperty(false);
+    if (propertyErr) { toast.error("Failed to save property: " + propertyErr.message); return; }
     setPropertyModalOpen(false);
     setPropertyForm(initialProperty);
     const { data, error: pErr } = await supabase().from("properties").select("*").eq("account_id", id).order("is_primary", { ascending: false });
