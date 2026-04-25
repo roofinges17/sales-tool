@@ -29,7 +29,7 @@ interface DetectResponse {
   mock?: boolean;
 }
 
-const GEMINI_MODEL = "gemini-2.0-flash";
+const GEMINI_MODEL = "gemini-1.5-flash";
 
 const SYSTEM_PROMPT = `You are a professional roofing contractor estimating linear footage for a residential property from photos.
 

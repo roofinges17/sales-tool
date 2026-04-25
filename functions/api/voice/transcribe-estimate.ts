@@ -30,7 +30,7 @@ interface TranscribeResponse {
   mock?: boolean;
 }
 
-const GEMINI_MODEL = "gemini-2.0-flash";
+const GEMINI_MODEL = "gemini-1.5-flash";
 
 const SYSTEM_PROMPT = `You are a roofing estimator assistant. Listen to the audio recording of a roofing contractor describing damage observations and work to be done.
 
