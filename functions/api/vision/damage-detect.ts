@@ -30,7 +30,7 @@ interface AnalysisResponse {
   mock?: boolean;
 }
 
-const GEMINI_MODEL = "gemini-1.5-flash";
+const GEMINI_MODEL = "gemini-2.5-flash";
 
 const SYSTEM_PROMPT = `You are a certified professional roof inspector. Analyze the provided roof photo(s) and return a structured JSON damage assessment.
 

@@ -32,7 +32,7 @@ interface DetectResponse {
   mock?: boolean;
 }
 
-const GEMINI_MODEL = "gemini-1.5-flash";
+const GEMINI_MODEL = "gemini-2.5-flash";
 
 const SYSTEM_PROMPT = `You are a professional roofing contractor and materials estimator. Analyze exterior house photos to assess soffit, fascia, and gutter condition, color, and linear footage.
 
