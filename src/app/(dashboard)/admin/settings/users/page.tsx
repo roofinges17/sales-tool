@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { authedFetch } from "@/lib/api";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -103,7 +104,7 @@ export default function UsersPage() {
     const userId = (editUser as UserProfile)?.id;
     if (!userId) return;
     setPurging(true);
-    const res = await fetch("/api/admin/purge-user", {
+    const res = await authedFetch("/api/admin/purge-user", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ user_id: userId }),
@@ -142,7 +143,7 @@ export default function UsersPage() {
       toast.success("Saved");
     } else {
       // Send invite email — server function uses service role key
-      const res = await fetch("/api/invite-user", {
+      const res = await authedFetch("/api/invite-user", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { authedFetch } from "@/lib/api";
 import IntegrationStatusCard, { type IntegrationStatus } from "@/components/settings/IntegrationStatusCard";
 
 const TEST_LAT = 25.7617;
@@ -33,10 +34,7 @@ export default function GoogleMapsPage() {
 
   async function fetchUsage() {
     try {
-      const { data: { session } } = await supabase().auth.getSession();
-      const res = await fetch("/api/admin/solar-usage", {
-        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
-      });
+      const res = await authedFetch("/api/admin/solar-usage");
       if (res.ok) {
         setSolarUsage(await res.json() as SolarUsage);
       } else {
@@ -51,15 +49,7 @@ export default function GoogleMapsPage() {
     setSolarChecking(true);
     setSolarStatus("checking");
     try {
-      const { data: { session } } = await supabase().auth.getSession();
-      const res = await fetch(
-        `/api/solar?lat=${TEST_LAT}&lng=${TEST_LNG}`,
-        {
-          headers: session?.access_token
-            ? { Authorization: `Bearer ${session.access_token}` }
-            : {},
-        },
-      );
+      const res = await authedFetch(`/api/solar?lat=${TEST_LAT}&lng=${TEST_LNG}`);
       if (res.ok) {
         const json = (await res.json()) as { mock?: boolean };
         if (json.mock) {

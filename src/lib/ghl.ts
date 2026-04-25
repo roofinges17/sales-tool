@@ -1,8 +1,10 @@
 // GHL sync helpers — all calls route through /api/ghl-proxy (PIT token stays server-side).
 // All functions are fire-and-forget: never throw, never block the caller.
 
+import { authedFetch } from "@/lib/api";
+
 async function ghlPost(endpoint: string, body: Record<string, unknown>): Promise<unknown> {
-  const res = await fetch("/api/ghl-proxy", {
+  const res = await authedFetch("/api/ghl-proxy", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ endpoint, method: "POST", body }),
@@ -11,7 +13,7 @@ async function ghlPost(endpoint: string, body: Record<string, unknown>): Promise
 }
 
 async function ghlPut(endpoint: string, body: Record<string, unknown>): Promise<unknown> {
-  const res = await fetch("/api/ghl-proxy", {
+  const res = await authedFetch("/api/ghl-proxy", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ endpoint, method: "PUT", body }),
@@ -20,7 +22,7 @@ async function ghlPut(endpoint: string, body: Record<string, unknown>): Promise<
 }
 
 async function ghlGet(endpoint: string, queryParams: Record<string, string> = {}): Promise<unknown> {
-  const res = await fetch("/api/ghl-proxy", {
+  const res = await authedFetch("/api/ghl-proxy", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ endpoint, method: "GET", queryParams }),

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { authedFetch } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -94,7 +95,7 @@ export default function QuickBooksPage() {
 
   async function handleSync(syncType: string) {
     setSyncing(true);
-    const res = await fetch("/api/quickbooks/sync", {
+    const res = await authedFetch("/api/quickbooks/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sync_type: syncType }),

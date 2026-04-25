@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { authedFetch } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useQuoteBuilder } from "@/lib/contexts/QuoteBuilderContext";
 import { Button } from "@/components/ui/Button";
@@ -186,9 +187,6 @@ export default function Step6Generate() {
     setVizError(null);
 
     try {
-      const token = (await supabase().auth.getSession()).data.session?.access_token;
-      if (!token) throw new Error("Not authenticated");
-
       let photoBase64: string | undefined;
       let mimeType = "image/jpeg";
       if (vizPhotoFile) {
@@ -199,12 +197,9 @@ export default function Step6Generate() {
         mimeType = "image/jpeg";
       }
 
-      const res = await fetch("/api/visualize/roof", {
+      const res = await authedFetch("/api/visualize/roof", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           photo_base64: photoBase64,
           mime_type: mimeType,

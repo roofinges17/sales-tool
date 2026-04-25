@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { authedFetch } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -146,7 +147,7 @@ function QuoteDetailContent() {
     let folioNumber: string | undefined = quote.folio_number ?? undefined;
     if (!folioNumber && acct?.billing_address_line1) {
       try {
-        const folioRes = await fetch("/api/folio-lookup", {
+        const folioRes = await authedFetch("/api/folio-lookup", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -283,19 +284,13 @@ function QuoteDetailContent() {
     });
   }
 
-  async function getAuthToken(): Promise<string | null> {
-    const { data } = await supabase().auth.getSession();
-    return data.session?.access_token ?? null;
-  }
-
   async function handleEmailLink() {
     if (!quote) return;
     setEmailLinkSending(true);
     try {
-      const token = await getAuthToken();
-      const res = await fetch("/api/email/send-quote-link", {
+      const res = await authedFetch("/api/email/send-quote-link", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ quoteId: quote.id, recipientEmail: emailLinkAddress || undefined }),
       });
       const data = await res.json() as { ok?: boolean; error?: string; recipient?: string };

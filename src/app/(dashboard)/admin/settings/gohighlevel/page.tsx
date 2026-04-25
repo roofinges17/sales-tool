@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { authedFetch } from "@/lib/api";
 import { toast } from "sonner";
 import IntegrationStatusCard, { type IntegrationStatus } from "@/components/settings/IntegrationStatusCard";
 
@@ -43,7 +44,7 @@ export default function GoHighLevelPage() {
     setChecking(true);
     setStatus("checking");
     try {
-      const res = await fetch("/api/ghl-proxy", {
+      const res = await authedFetch("/api/ghl-proxy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ endpoint: `locations/${KNOWN_ACCOUNTS[0].id}` }),
@@ -97,7 +98,7 @@ export default function GoHighLevelPage() {
     setTesting(true);
     setTestResult("idle");
     try {
-      const res = await fetch("/api/ghl-proxy", {
+      const res = await authedFetch("/api/ghl-proxy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

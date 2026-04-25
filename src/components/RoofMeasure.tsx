@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { authedFetch } from "@/lib/api";
 import { PlacesAutocompleteInput, type PlaceResult } from "@/components/ui/PlacesAutocompleteInput";
 import { Button } from "@/components/ui/Button";
 
@@ -75,7 +76,7 @@ export function RoofMeasure({ onMeasured, className }: RoofMeasureProps) {
 
       setLoadingStep(2);
 
-      const res = await fetch(`/api/solar?lat=${lat}&lng=${lng}`);
+      const res = await authedFetch(`/api/solar?lat=${lat}&lng=${lng}`);
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({})) as { error?: string };

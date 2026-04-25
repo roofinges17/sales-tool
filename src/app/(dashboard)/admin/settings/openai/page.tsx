@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { authedFetch } from "@/lib/api";
 import IntegrationStatusCard, { type IntegrationStatus } from "@/components/settings/IntegrationStatusCard";
 
 const FEATURES = [
@@ -24,15 +24,11 @@ export default function OpenAIPage() {
     setChecking(true);
     setStatus("checking");
     try {
-      const { data: { session } } = await supabase().auth.getSession();
-      // Send an empty photos array — if OPENAI_API_KEY is set, damage-detect returns 400
+      // Send an empty photos array — if GEMINI_API_KEY is set, damage-detect returns 400
       // (no photos). If unset, it returns the mock response with mock: true.
-      const res = await fetch("/api/vision/damage-detect", {
+      const res = await authedFetch("/api/vision/damage-detect", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ photos: [] }),
       });
 

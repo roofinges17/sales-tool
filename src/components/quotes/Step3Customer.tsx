@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { authedFetch } from "@/lib/api";
 import { toast } from "sonner";
 import { useQuoteBuilder } from "@/lib/contexts/QuoteBuilderContext";
 import { Button } from "@/components/ui/Button";
@@ -35,7 +36,7 @@ export default function Step3Customer() {
     setIntelError(null);
     setIntel(null);
     try {
-      const res = await fetch("/api/address-intel", {
+      const res = await authedFetch("/api/address-intel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ address: `${address}, ${city}`, lat, lng, zip }),

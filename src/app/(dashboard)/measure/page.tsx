@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { authedFetch } from "@/lib/api";
 import { PlacesAutocompleteInput, type PlaceResult } from "@/components/ui/PlacesAutocompleteInput";
 import { Button } from "@/components/ui/Button";
 import { AddressIntelCard, type AddressIntelResult } from "@/components/AddressIntelCard";
@@ -49,7 +50,7 @@ export default function MeasurePage() {
 
     try {
       setLoadStep(1);
-      const res = await fetch("/api/address-intel", {
+      const res = await authedFetch("/api/address-intel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ address, lat, lng, zip }),

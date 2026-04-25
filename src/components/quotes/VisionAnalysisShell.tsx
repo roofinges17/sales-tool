@@ -5,7 +5,7 @@
 // and add-to-cart flow. DamageAnalysis and MaterialAnalysis are thin wrappers.
 
 import { useRef, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { authedFetch } from "@/lib/api";
 
 interface Product {
   id: string;
@@ -100,13 +100,9 @@ export default function VisionAnalysisShell<TItem>({
 
     try {
       const photoData = await Promise.all(photos.map(fileToBase64));
-      const { data: { session } } = await supabase().auth.getSession();
-      const res = await fetch(endpoint, {
+      const res = await authedFetch(endpoint, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ photos: photoData }),
       });
       if (!res.ok) throw new Error(`Analysis failed (${res.status})`);
