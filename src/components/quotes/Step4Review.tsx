@@ -17,6 +17,7 @@ export default function Step4Review() {
     setStep,
     setDiscount,
     setTaxRate,
+    setTaxExempt,
     setValidDays,
     setNotes,
     subtotal,
@@ -131,13 +132,34 @@ export default function Step4Review() {
 
         {/* Settings row */}
         <div className="grid grid-cols-2 gap-4">
-          <Input
-            label="Tax Rate (%)"
-            type="number"
-            step="0.1"
-            value={(state.taxRate * 100).toFixed(1)}
-            onChange={(e) => setTaxRate(parseFloat(e.target.value) / 100 || 0.07)}
-          />
+          <div>
+            <label className="block text-sm font-medium text-zinc-300 mb-1.5">Tax</label>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setTaxExempt(!state.taxExempt)}
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${
+                  state.taxExempt ? "bg-green-500" : "bg-zinc-700"
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  state.taxExempt ? "translate-x-5" : "translate-x-0.5"
+                }`} />
+              </button>
+              {state.taxExempt ? (
+                <span className="text-sm text-green-400 font-medium">Tax Exempt</span>
+              ) : (
+                <Input
+                  type="number"
+                  step="0.1"
+                  placeholder="Rate %"
+                  value={(state.taxRate * 100).toFixed(1)}
+                  onChange={(e) => setTaxRate(parseFloat(e.target.value) / 100 || 0.07)}
+                  className="w-24"
+                />
+              )}
+            </div>
+          </div>
           <Input
             label="Valid for (days)"
             type="number"
@@ -183,10 +205,17 @@ export default function Step4Review() {
               <span className="text-green-400">−{formatCurrency(discountAmount)}</span>
             </div>
           )}
-          <div className="flex justify-between text-sm">
-            <span className="text-zinc-400">Tax ({(state.taxRate * 100).toFixed(1)}%)</span>
-            <span className="text-zinc-200">{formatCurrency(taxAmount)}</span>
-          </div>
+          {state.taxExempt ? (
+            <div className="flex justify-between text-sm">
+              <span className="text-zinc-500">Tax</span>
+              <span className="text-green-500 text-xs font-medium">Exempt</span>
+            </div>
+          ) : (
+            <div className="flex justify-between text-sm">
+              <span className="text-zinc-400">Tax ({(state.taxRate * 100).toFixed(1)}%)</span>
+              <span className="text-zinc-200">{formatCurrency(taxAmount)}</span>
+            </div>
+          )}
           <div className="border-t border-zinc-800 pt-2 flex justify-between">
             <span className="font-semibold text-zinc-100">Total</span>
             <span className="text-xl font-bold text-zinc-50">{formatCurrency(total)}</span>

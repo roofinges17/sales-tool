@@ -7,8 +7,11 @@ import { toast } from "sonner";
 import { useQuoteBuilder } from "@/lib/contexts/QuoteBuilderContext";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { PlacesAutocompleteInput, type PlaceResult } from "@/components/ui/PlacesAutocompleteInput";
 import { AddressIntelCard, type AddressIntelResult } from "@/components/AddressIntelCard";
+
+const LEAD_SOURCES = ["D2D", "Digital", "Door Knock", "GHL / CRM", "Insurance Claim", "Referral", "Social Media", "Website"];
 
 const ROOF_SKUS = ["ALUMINUM", "FLAT", "FLAT INSULATIONS", "METAL", "SHINGLE", "TILE"];
 const FLAT_SKUS = ["FLAT", "FLAT INSULATIONS"];
@@ -195,6 +198,15 @@ export default function Step3Customer() {
               value={state.newCustomer.phone}
               onChange={(e) => setNewCustomer({ phone: e.target.value })}
             />
+            <div className="sm:col-span-2">
+              <Select
+                label="Lead Source"
+                value={state.newCustomer.lead_source}
+                onChange={(e) => setNewCustomer({ lead_source: e.target.value })}
+                placeholder="How did they hear about us?"
+                options={LEAD_SOURCES.map((s) => ({ value: s, label: s }))}
+              />
+            </div>
           </div>
           <div>
             <p className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3">Property Address</p>

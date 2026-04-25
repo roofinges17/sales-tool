@@ -3,6 +3,15 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 
+const COLOR_HEX: Record<string, string> = {
+  "Matte Black": "#1C1C1C", "Charcoal Gray": "#3F3F3F", "Mansard Brown": "#5C4033",
+  "Dark Bronze": "#3D2B1F", "Dove Gray": "#8A8785", "Slate Gray": "#6A7280",
+  "Bone White": "#E8E3D7", "Terracotta": "#C87941", "Classic White": "#F0EBE3",
+  "Patina Green": "#4A7C6B", "Colonial Red": "#8B2020", "Forest Green": "#2D5016",
+  "Royal Blue": "#1A3A6B", "Burnished Slate": "#5A6472", "Weathered Zinc": "#7A8490",
+  "Copper Patina": "#6B8E7A", "Aged Bronze": "#5C4A2A",
+};
+
 type PageStatus = "loading" | "pending_sign" | "success" | "already_accepted" | "error";
 type SignMode = "electronic" | "manual";
 
@@ -308,7 +317,7 @@ export default function AcceptPage() {
                   <div className="rounded-xl border border-zinc-700 bg-zinc-950/40 px-4 py-3 space-y-1">
                     <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Roof Color</p>
                     <div className="flex items-center gap-2 mt-1">
-                      <div className="h-5 w-5 rounded border border-zinc-600 bg-zinc-700" />
+                      <div className="h-5 w-5 rounded border border-zinc-600 flex-shrink-0" style={{ backgroundColor: COLOR_HEX[quote.roof_color] ?? "#64748b" }} />
                       <span className="text-sm font-semibold text-zinc-100">{quote.roof_color}</span>
                     </div>
                     <p className="text-xs text-zinc-500 mt-1">

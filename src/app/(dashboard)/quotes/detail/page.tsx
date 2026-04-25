@@ -410,6 +410,8 @@ function QuoteDetailContent() {
           department_id: (quote.department as { id: string } | null)?.id ?? null,
           assigned_to_id: (quote.assigned_to as { id: string } | null)?.id ?? null,
           visualization_color_id: quote.visualization_color_id ?? null,
+          roof_color: quote.roof_color ?? null,
+          visualizer_image_url: quote.visualizer_image_url ?? null,
           folio_number: quote.folio_number ?? null,
         })
         .select()

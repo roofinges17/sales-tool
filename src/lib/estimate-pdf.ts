@@ -750,7 +750,8 @@ export function generateEstimatePdf(input: PdfEstimateInput): jsPDF {
     newPage();
     const imgW = CW;
     const imgH = Math.min(imgW * 0.65, C_MAX - y - 20);
-    doc.addImage(input.visualizationImageDataUrl, "PNG", MG, y, imgW, imgH);
+    const legacyFmt = input.visualizationImageDataUrl.startsWith("data:image/jpeg") ? "JPEG" : "PNG";
+    doc.addImage(input.visualizationImageDataUrl, legacyFmt, MG, y, imgW, imgH);
     y += imgH + 6;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);

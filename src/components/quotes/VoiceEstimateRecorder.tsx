@@ -316,7 +316,7 @@ export default function VoiceEstimateRecorder({ products, onAddToCart }: VoiceEs
       <div className="p-4 space-y-3">
         {mock && (
           <div className="rounded-lg border border-amber-800/40 bg-amber-950/20 px-3 py-2 text-xs text-amber-400">
-            Demo mode — add OPENAI_API_KEY to Cloudflare Pages env to enable real transcription.
+            Demo mode — add GEMINI_API_KEY to Cloudflare Pages env to enable real transcription.
           </div>
         )}
 
