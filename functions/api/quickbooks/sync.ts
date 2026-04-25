@@ -3,6 +3,7 @@
 // TODO (Phase 22): implement token refresh, QB API calls, and per-type sync logic.
 
 import { createClient } from "@supabase/supabase-js";
+import { guard } from "../_guard";
 
 interface Env {
   SUPABASE_URL: string;
@@ -15,6 +16,13 @@ const corsHeaders = {
 };
 
 export const onRequestPost: PagesFunction<Env> = async (ctx) => {
+  const { error: guardErr } = await guard(ctx.request, ctx.env, {
+    maxBodyBytes: 0,
+    ratePrefix: "qb-sync",
+    rateLimit: 0,
+  });
+  if (guardErr) return guardErr;
+
   try {
     const { sync_type } = (await ctx.request.json()) as { sync_type?: string };
     if (!sync_type) {
@@ -48,5 +56,6 @@ export const onRequestOptions: PagesFunction = async () =>
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
+
     },
   });

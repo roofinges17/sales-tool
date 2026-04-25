@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { guard } from "../_guard";
 
 interface Env {
   SUPABASE_URL: string;
@@ -11,13 +12,32 @@ const corsHeaders = {
 };
 
 export const onRequestPost: PagesFunction<Env> = async (ctx) => {
+  // Require authenticated admin/owner — this route hard-deletes auth.users
+  const { userId, error: guardErr } = await guard(ctx.request, ctx.env, {
+    maxBodyBytes: 0,
+    ratePrefix: "purge-user",
+    rateLimit: 0,
+  });
+  if (guardErr) return guardErr;
+
+  const supabase = createClient(ctx.env.SUPABASE_URL, ctx.env.SUPABASE_SERVICE_ROLE_KEY);
+
+  // Role check: only admin/owner may purge users
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", userId!)
+    .single();
+  const role = (profile as { role?: string } | null)?.role;
+  if (!role || !["admin", "owner"].includes(role)) {
+    return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: corsHeaders });
+  }
+
   try {
     const { user_id } = (await ctx.request.json()) as { user_id?: string };
     if (!user_id) {
       return new Response(JSON.stringify({ error: "user_id is required" }), { status: 400, headers: corsHeaders });
     }
-
-    const supabase = createClient(ctx.env.SUPABASE_URL, ctx.env.SUPABASE_SERVICE_ROLE_KEY);
 
     // Hard-delete from auth.users — frees the email address for re-invite
     const { error } = await supabase.auth.admin.deleteUser(user_id);

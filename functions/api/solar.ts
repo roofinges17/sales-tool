@@ -1,5 +1,9 @@
+import { guard } from "./_guard";
+
 export interface Env {
   GOOGLE_API_KEY: string;
+  SUPABASE_URL: string;
+  SUPABASE_SERVICE_ROLE_KEY: string;
 }
 
 const SQ_M_TO_SQ_FT = 10.7639;
@@ -65,6 +69,13 @@ function processSegments(segments: RoofSegment[]) {
 }
 
 export const onRequestGet: PagesFunction<Env> = async (ctx) => {
+  const { error: guardErr } = await guard(ctx.request, ctx.env, {
+    maxBodyBytes: 0,
+    ratePrefix: "solar",
+    rateLimit: 0,
+  });
+  if (guardErr) return guardErr;
+
   const url = new URL(ctx.request.url);
   const lat = url.searchParams.get("lat");
   const lng = url.searchParams.get("lng");
@@ -129,3 +140,13 @@ export const onRequestGet: PagesFunction<Env> = async (ctx) => {
     return new Response(JSON.stringify({ error: message }), { status: 500, headers: cors });
   }
 };
+
+export const onRequestOptions: PagesFunction<Env> = async () =>
+  new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    },
+  });

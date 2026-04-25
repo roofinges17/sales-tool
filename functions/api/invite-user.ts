@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { guard } from "./_guard";
 
 interface Env {
   SUPABASE_URL: string;
@@ -18,6 +19,27 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     "Content-Type": "application/json",
   };
 
+  // Require authenticated admin/owner — this route creates auth.users with arbitrary roles
+  const { userId, error: guardErr } = await guard(ctx.request, ctx.env, {
+    maxBodyBytes: 0,
+    ratePrefix: "invite-user",
+    rateLimit: 0,
+  });
+  if (guardErr) return guardErr;
+
+  const supabase = createClient(ctx.env.SUPABASE_URL, ctx.env.SUPABASE_SERVICE_ROLE_KEY);
+
+  // Role check: only admin/owner may invite users
+  const { data: callerProfile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", userId!)
+    .single();
+  const callerRole = (callerProfile as { role?: string } | null)?.role;
+  if (!callerRole || !["admin", "owner"].includes(callerRole)) {
+    return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: corsHeaders });
+  }
+
   try {
     const body = (await ctx.request.json()) as InviteBody;
     const { email, name, role, department_id } = body;
@@ -25,11 +47,6 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     if (!email || !name || !role) {
       return new Response(JSON.stringify({ error: "email, name, and role are required" }), { status: 400, headers: corsHeaders });
     }
-
-    const supabase = createClient(
-      ctx.env.SUPABASE_URL,
-      ctx.env.SUPABASE_SERVICE_ROLE_KEY,
-    );
 
     const origin = new URL(ctx.request.url).origin;
     const redirectTo = `${origin}/auth/update-password`;

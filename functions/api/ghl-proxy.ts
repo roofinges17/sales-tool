@@ -3,11 +3,12 @@
 // PIT resolution order: company_settings.ghl_pit_token → GHL_PIT env var.
 
 import { createClient } from "@supabase/supabase-js";
+import { guard } from "./_guard";
 
 interface Env {
   GHL_PIT: string;
-  SUPABASE_URL?: string;
-  SUPABASE_SERVICE_ROLE_KEY?: string;
+  SUPABASE_URL: string;
+  SUPABASE_SERVICE_ROLE_KEY: string;
 }
 
 interface ProxyRequest {
@@ -42,6 +43,14 @@ async function resolvePit(env: Env): Promise<string | null> {
 
 export async function onRequestPost(ctx: { request: Request; env: Env }) {
   const { env, request } = ctx;
+
+  const { error: guardErr } = await guard(request, env, {
+    maxBodyBytes: 0,
+    ratePrefix: "ghl-proxy",
+    rateLimit: 0,
+  });
+  if (guardErr) return guardErr;
+
   const pit = await resolvePit(env);
 
   if (!pit) {
@@ -56,6 +65,10 @@ export async function onRequestPost(ctx: { request: Request; env: Env }) {
   }
 
   const { endpoint, method = "GET", body, queryParams = {} } = payload;
+
+  if (!endpoint || typeof endpoint !== "string") {
+    return Response.json({ error: "endpoint is required" }, { status: 400 });
+  }
 
   // Build URL
   const url = new URL(`${GHL_BASE}/${endpoint}`);
@@ -84,6 +97,14 @@ export async function onRequestPost(ctx: { request: Request; env: Env }) {
 export async function onRequestGet(ctx: { request: Request; env: Env }) {
   // GET version for easy pipeline listing from settings page
   const { env, request } = ctx;
+
+  const { error: guardErr } = await guard(request, env, {
+    maxBodyBytes: 0,
+    ratePrefix: "ghl-proxy-get",
+    rateLimit: 0,
+  });
+  if (guardErr) return guardErr;
+
   const pit = await resolvePit(env);
   if (!pit) return Response.json({ error: "GHL_PIT not configured" }, { status: 500 });
 

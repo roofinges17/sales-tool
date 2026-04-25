@@ -5,9 +5,13 @@
 // Input:  { address: string, lat: number, lng: number, zip?: string }
 // Output: { roof?, folio?, floodZone?, property?, hvhz }
 
+import { guard } from "./_guard";
+
 export interface Env {
   GOOGLE_API_KEY: string;
   FOLIO_CACHE?: KVNamespace;
+  SUPABASE_URL: string;
+  SUPABASE_SERVICE_ROLE_KEY: string;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -298,6 +302,13 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     "Cache-Control": "public, max-age=86400", // 24h — property data doesn't change daily
   };
 
+  const { error: guardErr } = await guard(ctx.request, ctx.env, {
+    maxBodyBytes: 0,
+    ratePrefix: "address-intel",
+    rateLimit: 0,
+  });
+  if (guardErr) return guardErr;
+
   const { GOOGLE_API_KEY, FOLIO_CACHE } = ctx.env;
 
   let body: { address?: string; lat?: number; lng?: number; zip?: string };
@@ -370,7 +381,7 @@ export const onRequestOptions: PagesFunction<Env> = async () => {
     headers: {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
     },
   });
 };
