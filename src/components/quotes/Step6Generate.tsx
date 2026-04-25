@@ -108,11 +108,12 @@ export default function Step6Generate() {
         ].filter(Boolean);
         address = parts.length > 0 ? parts.join(", ") : null;
       } else if (state.existingAccountId) {
-        const { data } = await supabase()
+        const { data, error: addrErr } = await supabase()
           .from("accounts")
           .select("billing_address_line1, billing_city, billing_state")
           .eq("id", state.existingAccountId)
           .single();
+        if (addrErr) { setVizError("Could not load customer address. Try again."); return; }
         if (data) {
           const d = data as { billing_address_line1?: string | null; billing_city?: string | null; billing_state?: string | null };
           const parts = [d.billing_address_line1, d.billing_city, d.billing_state].filter(Boolean);

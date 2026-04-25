@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { toast } from "sonner";
 import { Select } from "@/components/ui/Select";
 import { Card, CardContent } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -65,12 +66,13 @@ export default function PipelinePage() {
     setNoWorkflow(false);
 
     // Find workflow template for dept
-    const { data: templates } = await supabase()
+    const { data: templates, error: tmplErr } = await supabase()
       .from("workflow_templates")
       .select("id")
       .eq("department_id", deptId)
       .eq("is_active", true)
       .limit(1);
+    if (tmplErr) { toast.error("Failed to load pipeline: " + tmplErr.message); setLoading(false); return; }
 
     if (!templates?.length) {
       setStages([]);

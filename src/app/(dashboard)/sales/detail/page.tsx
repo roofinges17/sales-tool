@@ -163,19 +163,21 @@ function SaleDetailContent() {
   }
 
   async function loadStages(deptId: string) {
-    const { data: templates } = await supabase()
+    const { data: templates, error: tmplErr } = await supabase()
       .from("workflow_templates")
       .select("id")
       .eq("department_id", deptId)
       .eq("is_active", true)
       .limit(1);
+    if (tmplErr) { console.error("[sales/detail] workflow_templates load failed:", tmplErr.message); return; }
     if (!templates?.length) return;
-    const { data: stages } = await supabase()
+    const { data: stages, error: stagesErr } = await supabase()
       .from("workflow_stages")
       .select("*")
       .eq("template_id", (templates[0] as { id: string }).id)
       .eq("is_active", true)
       .order("sort_order");
+    if (stagesErr) { console.error("[sales/detail] workflow_stages load failed:", stagesErr.message); return; }
     setAvailableStages((stages as WorkflowStage[]) ?? []);
   }
 

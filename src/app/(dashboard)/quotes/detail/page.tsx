@@ -166,11 +166,12 @@ function QuoteDetailContent() {
     }
 
     // Fetch company settings for PDF header
-    const { data: companySettings } = await supabase()
+    const { data: companySettings, error: csErr } = await supabase()
       .from("company_settings")
       .select("company_name, license_number, address, phone, email")
       .limit(1)
       .maybeSingle();
+    if (csErr) console.warn("[quotes/detail] company_settings load failed:", csErr.message);
     const cs = companySettings as {
       company_name?: string | null;
       license_number?: string | null;
@@ -367,20 +368,22 @@ function QuoteDetailContent() {
     setCloning(true);
     try {
       // Get next estimate number
-      const { data: settings } = await supabase()
+      const { data: settings, error: settingsErr } = await supabase()
         .from("company_settings")
         .select("estimate_prefix")
         .limit(1)
         .maybeSingle();
+      if (settingsErr) console.warn("[quotes/detail] estimate_prefix load failed:", settingsErr.message);
       const prefix = (settings as { estimate_prefix?: string } | null)?.estimate_prefix ?? "EST-";
 
       // Get next number
-      const { data: existing } = await supabase()
+      const { data: existing, error: existingErr } = await supabase()
         .from("quotes")
         .select("name")
         .ilike("name", `${prefix}%`)
         .order("created_at", { ascending: false })
         .limit(1);
+      if (existingErr) { toast.error("Failed to generate estimate number: " + existingErr.message); return; }
       let nextNum = 1;
       if (existing && existing.length > 0) {
         const last = (existing[0] as { name: string }).name;
