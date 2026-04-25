@@ -171,7 +171,7 @@ const defaultState: QuoteBuilderState = {
   visualizerColor: null,
   visualizerFinish: null,
   folioNumber: "",
-  taxExempt: false,
+  taxExempt: true,
 };
 
 const QuoteBuilderContext = createContext<QuoteBuilderContextValue | null>(null);
