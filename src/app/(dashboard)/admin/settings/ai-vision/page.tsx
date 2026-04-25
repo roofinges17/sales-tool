@@ -5,12 +5,12 @@ import { authedFetch } from "@/lib/api";
 import IntegrationStatusCard, { type IntegrationStatus } from "@/components/settings/IntegrationStatusCard";
 
 const FEATURES = [
-  { name: "AI Damage Analysis", description: "Detect roof damage from photos", endpoint: "/admin/settings/openai" },
-  { name: "AI Material Analysis", description: "Detect soffit · fascia · gutter condition from photos", endpoint: "/admin/settings/openai" },
-  { name: "Voice Estimate", description: "Transcribe spoken estimate line items (Whisper + GPT-4o)", endpoint: "/admin/settings/openai" },
+  { name: "AI Damage Analysis", description: "Detect roof damage from photos" },
+  { name: "AI Material Analysis", description: "Detect soffit · fascia · gutter condition from photos" },
+  { name: "Voice Estimate", description: "Transcribe spoken estimate line items with Gemini audio" },
 ];
 
-export default function OpenAIPage() {
+export default function AIVisionPage() {
   const [status, setStatus] = useState<IntegrationStatus>("checking");
   const [statusLabel, setStatusLabel] = useState("");
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
@@ -33,14 +33,13 @@ export default function OpenAIPage() {
       });
 
       if (res.status === 400) {
-        // Endpoint reached the "no photos" validation — API key IS configured
         setStatus("connected");
-        setStatusLabel("API key configured — real GPT-4o active");
+        setStatusLabel("API key configured — Gemini 2.5 Flash active");
       } else if (res.ok) {
         const json = (await res.json()) as { mock?: boolean };
         if (json.mock) {
           setStatus("partial");
-          setStatusLabel("Mock mode — OPENAI_API_KEY not set");
+          setStatusLabel("Mock mode — GEMINI_API_KEY not set");
         } else {
           setStatus("connected");
           setStatusLabel("Connected");
@@ -60,15 +59,15 @@ export default function OpenAIPage() {
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
-        <h1 className="text-xl font-semibold text-zinc-100">OpenAI Vision & Voice</h1>
+        <h1 className="text-xl font-semibold text-zinc-100">Google Gemini Vision & Voice</h1>
         <p className="text-sm text-zinc-500 mt-1">
-          GPT-4o and Whisper power damage detection, material analysis, and voice estimate transcription.
+          Gemini 2.5 Flash powers damage detection, material analysis, and voice estimate transcription.
         </p>
       </div>
 
       <IntegrationStatusCard
-        name="OpenAI API"
-        description="GPT-4o vision + Whisper speech-to-text"
+        name="Google Gemini API"
+        description="Gemini 2.5 Flash — vision + audio"
         status={status}
         statusLabel={statusLabel}
         lastChecked={lastChecked}
@@ -77,7 +76,7 @@ export default function OpenAIPage() {
       >
         {/* Feature list */}
         <div className="space-y-2">
-          <h3 className="text-sm font-medium text-zinc-300">Features powered by OpenAI</h3>
+          <h3 className="text-sm font-medium text-zinc-300">Features powered by Gemini</h3>
           <div className="space-y-2">
             {FEATURES.map((f) => (
               <div
@@ -101,22 +100,22 @@ export default function OpenAIPage() {
         {/* Config note */}
         <div className="space-y-2 text-sm text-zinc-400">
           <p>
-            Configure via <code className="text-zinc-300">OPENAI_API_KEY</code> environment variable in
+            Configure via <code className="text-zinc-300">GEMINI_API_KEY</code> environment variable in
             Cloudflare Pages. Changing the key requires a redeploy.
           </p>
           {status === "partial" && (
             <div className="rounded-xl border border-amber-800/40 bg-amber-950/20 px-4 py-3 text-xs text-amber-400">
               Running in demo mode — all vision and voice features return sample data. Add{" "}
-              <code>OPENAI_API_KEY</code> in Cloudflare Pages env and redeploy to enable real AI analysis.
+              <code>GEMINI_API_KEY</code> in Cloudflare Pages env and redeploy to enable real AI analysis.
             </div>
           )}
           <a
-            href="https://platform.openai.com/usage"
+            href="https://aistudio.google.com/app/apikey"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 text-xs font-medium text-brand hover:underline"
           >
-            View OpenAI usage dashboard →
+            Manage Gemini API keys in Google AI Studio →
           </a>
         </div>
       </IntegrationStatusCard>
