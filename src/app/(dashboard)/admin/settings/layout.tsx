@@ -43,21 +43,21 @@ const NAV_GROUPS_MANAGER = [
   },
 ];
 
+const ADMIN_ONLY_PATHS = [
+  "/admin/settings/users/",
+  "/admin/settings/departments/",
+  "/admin/settings/quickbooks/",
+  "/admin/settings/gohighlevel/",
+  "/admin/settings/google-maps/",
+  "/admin/settings/resend/",
+  "/admin/settings/ai-vision/",
+];
+
 export default function AdminSettingsLayout({ children }: { children: React.ReactNode }) {
   const { profile, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-
-  const ADMIN_ONLY_PATHS = [
-    "/admin/settings/users/",
-    "/admin/settings/departments/",
-    "/admin/settings/quickbooks/",
-    "/admin/settings/gohighlevel/",
-    "/admin/settings/google-maps/",
-    "/admin/settings/resend/",
-    "/admin/settings/ai-vision/",
-  ];
 
   useEffect(() => {
     if (!loading && profile) {

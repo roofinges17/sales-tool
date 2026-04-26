@@ -249,6 +249,15 @@ export default function Step6Generate() {
     setSaving(true);
     setError(null);
 
+    const hasMetalItem = state.cart.some((item) =>
+      ["ALUMINUM", "METAL"].some((s) => (item.product_sku ?? "").toUpperCase().startsWith(s))
+    );
+    if (hasMetalItem && !roofColor) {
+      setError("Please select a roof color in Step 2 before saving.");
+      setSaving(false);
+      return;
+    }
+
     try {
       const isEditing = !!editingQuoteId;
       const validUntil = new Date();
