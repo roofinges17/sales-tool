@@ -6,6 +6,7 @@ import {
 
 export interface Env {
   GOOGLE_API_KEY: string;
+  NEXT_PUBLIC_GOOGLE_MAPS_STATIC_KEY?: string;
   SOLAR_CACHE?: KVNamespace;
   SUPABASE_URL: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
@@ -92,7 +93,14 @@ export const onRequestGet: PagesFunction<Env> = async (ctx) => {
     });
   }
 
-  const apiKey = ctx.env.GOOGLE_API_KEY;
+  // GOOGLE_API_KEY was rotated to the Gemini key which has API_KEY_SERVICE_BLOCKED for solar.googleapis.com.
+  // NEXT_PUBLIC_GOOGLE_MAPS_STATIC_KEY is on the same GCP project with Solar API accessible,
+  // but requires an HTTP Referer header. Prefer it; fall back to GOOGLE_API_KEY.
+  const apiKey = ctx.env.NEXT_PUBLIC_GOOGLE_MAPS_STATIC_KEY ?? ctx.env.GOOGLE_API_KEY;
+  const solarReferer = ctx.env.NEXT_PUBLIC_GOOGLE_MAPS_STATIC_KEY
+    ? "https://roofing-experts-sales-tool.pages.dev/"
+    : undefined;
+
   if (!apiKey) {
     return new Response(JSON.stringify({ error: "Google API key not configured" }), {
       status: 500,
@@ -160,7 +168,10 @@ export const onRequestGet: PagesFunction<Env> = async (ctx) => {
         `?location.latitude=${lat}&location.longitude=${lng}` +
         `&requiredQuality=${quality}&key=${apiKey}`;
 
-      const res = await fetch(solarUrl);
+      const fetchHeaders: Record<string, string> = {};
+      if (solarReferer) fetchHeaders["Referer"] = solarReferer;
+
+      const res = await fetch(solarUrl, { headers: fetchHeaders });
 
       if (res.ok) {
         data = (await res.json()) as SolarResponse;
