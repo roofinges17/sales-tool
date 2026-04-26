@@ -68,8 +68,12 @@ async function fetchPhotoBase64(url: string): Promise<{ data: string; mimeType: 
   if (!res.ok) throw new Error(`Failed to fetch photo: ${res.status}`);
   const mimeType = res.headers.get("content-type") ?? "image/jpeg";
   const buffer = await res.arrayBuffer();
-  const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
-  return { data: base64, mimeType };
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 8192) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+  }
+  return { data: btoa(binary), mimeType };
 }
 
 export async function onRequestPost(ctx: { request: Request; env: Env }) {
@@ -141,7 +145,7 @@ export async function onRequestPost(ctx: { request: Request; env: Env }) {
   }
 
   const finish = body.finish ?? "Matte";
-  const prompt = `Replace this roof with standing seam metal in ${body.color}, ${finish.toLowerCase()} finish. Preserve all other elements of the image including landscaping, vehicles, sky, lighting, and building geometry. Keep the same perspective and scale.`;
+  const prompt = `Replace this roof with standing seam metal in ${body.color}, ${finish.toLowerCase()} finish. Preserve all other elements of the image including landscaping, vehicles, sky, lighting, and building geometry. Keep the same perspective and scale. If trees, foliage, or vegetation obscure significant portions of the roof, intelligently remove them and render the clean roof surface as if no occlusion existed. Preserve the rest of the scene (sky, walls, ground, surroundings) exactly as in the source image.`;
 
   // Call Gemini API
   const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:generateContent?key=${googleApiKey}`;
