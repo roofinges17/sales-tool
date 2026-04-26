@@ -10,6 +10,7 @@ import {
   SOLAR_QUOTA, SOLAR_WARN_AT, SOLAR_CRITICAL_AT,
   solarCacheKey, solarMonthTag, solarUsageKey, solarHitsKey, solarResetDate,
 } from "./_solar-cache";
+import { lookupFolio, detectCounty as countyFromZip, type FolioData } from "./_folio";
 
 export interface Env {
   GOOGLE_API_KEY: string;
@@ -24,20 +25,6 @@ export interface Env {
 const SQ_M_TO_SQ_FT = 10.7639;
 const WASTE_FACTOR = 1.02;
 const FLAT_PITCH_THRESHOLD_DEG = 9.5;
-
-// All Miami-Dade and Broward ZIP codes are HVHZ (High Velocity Hurricane Zone)
-// per Florida Building Code. Detect by ZIP prefix.
-function isHVHZ(zip?: string): boolean {
-  if (!zip) return false;
-  const z = parseInt(zip.replace(/\D/g, "").slice(0, 5), 10);
-  return (
-    (z >= 33010 && z <= 33299) ||
-    z === 33004 ||
-    (z >= 33009 && z <= 33029) ||
-    (z >= 33060 && z <= 33076) ||
-    (z >= 33301 && z <= 33394)
-  );
-}
 
 // ── Solar / roof measurement ─────────────────────────────────────────────────
 
@@ -156,78 +143,27 @@ async function fetchRoofData(
   }
 }
 
-// ── Folio lookup — Miami-Dade GIS ────────────────────────────────────────────
+// ── Folio lookup (multi-county) ──────────────────────────────────────────────
 
-const DIRECTIONALS = new Set(["N", "S", "E", "W", "NE", "NW", "SE", "SW"]);
-const STREET_TYPES: Record<string, string> = {
-  ST: "ST", STREET: "ST", AVE: "AVE", AV: "AVE", AVENUE: "AVE", BLVD: "BLVD",
-  BOULEVARD: "BLVD", DR: "DR", DRIVE: "DR", CT: "CT", COURT: "CT", PL: "PL",
-  PLACE: "PL", RD: "RD", ROAD: "RD", LN: "LN", LANE: "LN", WAY: "WAY",
-  TER: "TER", TERRACE: "TER", CIR: "CIR", CIRCLE: "CIR",
-};
-
-function detectCounty(zip: string): "miami-dade" | "broward" {
-  const z = parseInt(zip.replace(/\D/g, "").slice(0, 5), 10);
-  if (
-    z === 33004 || (z >= 33009 && z <= 33029) || (z >= 33060 && z <= 33076) ||
-    (z >= 33301 && z <= 33340) || z === 33388 || z === 33394
-  ) return "broward";
-  return "miami-dade";
-}
-
-async function fetchFolio(
+async function fetchFolioWithCache(
   address: string,
-  zip?: string,
+  zip: string | undefined,
+  lat: number,
+  lng: number,
   cache?: KVNamespace,
-): Promise<string | null> {
-  try {
-    const county = zip ? detectCounty(zip) : "miami-dade";
-    const cacheKey = `folio:${county}:${address.toLowerCase().trim()}`;
-    if (cache) {
-      const cached = await cache.get(cacheKey, "json") as { folio: string } | null;
-      if (cached?.folio) return cached.folio;
-    }
-
-    const street = address.split(",")[0].trim().toUpperCase();
-    const parts = street.split(/\s+/);
-    if (parts.length < 2) return null;
-    const hseNum = parseInt(parts[0], 10);
-    if (isNaN(hseNum)) return null;
-    let idx = 1;
-    let preDir: string | null = null;
-    if (idx < parts.length && DIRECTIONALS.has(parts[idx])) preDir = parts[idx++];
-    const lastPart = parts[parts.length - 1];
-    const stType = STREET_TYPES[lastPart] ?? null;
-    const nameEnd = stType ? parts.length - 1 : parts.length;
-    const stName = parts.slice(idx, nameEnd).join(" ");
-    if (!stName) return null;
-
-    const conditions = [`HSE_NUM=${hseNum}`, `ST_NAME LIKE '${stName}%'`];
-    if (preDir) conditions.push(`PRE_DIR='${preDir}'`);
-    if (stType) conditions.push(`ST_TYPE='${stType}'`);
-
-    const params = new URLSearchParams({
-      where: conditions.join(" AND "),
-      outFields: "FOLIO",
-      returnGeometry: "false",
-      resultRecordCount: "1",
-      f: "json",
-    });
-
-    const url = `https://gis.miamidade.gov/arcgis/rest/services/AddressSearchMap_PropertiesWithZip/MapServer/0/query?${params}`;
-    const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; RoofingExperts-SalesTool/1.0)" },
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { features?: Array<{ attributes: { FOLIO?: string } }> };
-    const folio = data?.features?.[0]?.attributes?.FOLIO?.trim() ?? null;
-    if (folio && cache) {
-      await cache.put(cacheKey, JSON.stringify({ folio }), { expirationTtl: 60 * 60 * 24 * 30 });
-    }
-    return folio;
-  } catch {
-    return null;
+): Promise<FolioData> {
+  const county = zip ? countyFromZip(zip) : "miami-dade";
+  if (cache) {
+    const key = `folio:${county}:${address.toLowerCase().replace(/\s+/g, " ").trim()}`;
+    const cached = await cache.get(key, "json") as FolioData | null;
+    if (cached) return cached;
   }
+  const result = await lookupFolio(address, zip, lat, lng);
+  if (result.folio && cache) {
+    const key = `folio:${county}:${address.toLowerCase().replace(/\s+/g, " ").trim()}`;
+    cache.put(key, JSON.stringify(result), { expirationTtl: 60 * 60 * 24 * 30 });
+  }
+  return result;
 }
 
 // ── EnerGov property details ─────────────────────────────────────────────────
@@ -385,19 +321,24 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     }
   }
 
-  const [roofResult, floodZone, folio] = await Promise.all([
+  const [roofResult, floodZone, folioData] = await Promise.all([
     GOOGLE_API_KEY ? fetchRoofData(lat, lng, GOOGLE_API_KEY, SOLAR_CACHE) : Promise.resolve(null),
     fetchFloodZone(lat, lng),
-    fetchFolio(address, zip, FOLIO_CACHE),
+    fetchFolioWithCache(address, zip, lat, lng, FOLIO_CACHE),
   ]);
 
   let property: PropertyDetails | null = null;
   let permits: PermitSummary[] = [];
-  if (folio) {
-    [property, permits] = await Promise.all([
-      fetchPropertyDetails(folio),
-      fetchRecentPermits(folio),
-    ]);
+  if (folioData.folio) {
+    if (folioData.county === "miami-dade") {
+      [property, permits] = await Promise.all([
+        fetchPropertyDetails(folioData.folio),
+        fetchRecentPermits(folioData.folio),
+      ]);
+    } else {
+      // Other county PAs already return owner + yearBuilt in FolioData
+      property = { owner: folioData.owner, yearBuilt: folioData.yearBuilt, lotSizeSqft: null };
+    }
   }
 
   const quotaExhausted = roofResult === "quota_exhausted";
@@ -405,10 +346,10 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     ? { source: "manual_entry_required" as const, totalSqft: null, slopedSqft: null, flatSqft: null, pitch: null, segmentCount: null, resetDate: solarResetDate() }
     : roofResult;
 
-  const result = { roof, folio, floodZone, property, permits, hvhz: isHVHZ(zip) };
+  const result = { roof, folio: folioData.folio, floodZone, property, permits, hvhz: folioData.hvhz };
 
   // Don't cache when quota exhausted — next request should retry Solar after quota resets
-  if (!quotaExhausted && FOLIO_CACHE && (roof || folio || floodZone)) {
+  if (!quotaExhausted && FOLIO_CACHE && (roof || folioData.folio || floodZone)) {
     await FOLIO_CACHE.put(intelCacheKey, JSON.stringify(result), { expirationTtl: INTEL_TTL });
   }
 
