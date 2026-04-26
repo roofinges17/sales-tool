@@ -19,11 +19,15 @@ const MODEL_ID = "gemini-2.5-flash-image";
 const SATELLITE_ZOOM = 19;
 const SATELLITE_SIZE = "1024x1024";
 
+// Referer required to satisfy the Maps key's Website restriction from server-side
+const MAPS_REFERER = "https://roofing-experts-sales-tool.pages.dev/";
+
 interface Env {
   SUPABASE_URL?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
   GOOGLE_API_KEY?: string;
   GEMINI_API_KEY?: string;
+  NEXT_PUBLIC_GOOGLE_MAPS_STATIC_KEY?: string;
   VISUALIZER_DAILY_CAP?: string;
 }
 
@@ -74,14 +78,17 @@ export async function onRequestPost(ctx: { request: Request; env: Env }) {
 
   const supabaseUrl = env.SUPABASE_URL ?? "https://hlmmwtehabwywajuhghi.supabase.co";
   const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
-  const googleApiKey = env.GOOGLE_API_KEY ?? env.GEMINI_API_KEY;
+  // Maps key (has Static Maps + Street View enabled, requires Referer header)
+  const mapsApiKey = env.NEXT_PUBLIC_GOOGLE_MAPS_STATIC_KEY ?? env.GOOGLE_API_KEY;
+  // Gemini key (has Generative Language API enabled)
+  const geminiApiKey = env.GOOGLE_API_KEY ?? env.GEMINI_API_KEY;
   const dailyCap = parseInt(env.VISUALIZER_DAILY_CAP ?? "20", 10);
 
   if (!serviceKey) {
     return Response.json({ error: "Server misconfigured" }, { status: 500, headers: CORS });
   }
-  if (!googleApiKey) {
-    return Response.json({ error: "GOOGLE_API_KEY / GEMINI_API_KEY not configured" }, { status: 500, headers: CORS });
+  if (!mapsApiKey || !geminiApiKey) {
+    return Response.json({ error: "API keys not configured" }, { status: 500, headers: CORS });
   }
 
   const userId = await getUserId(request, env);
@@ -125,14 +132,14 @@ export async function onRequestPost(ctx: { request: Request; env: Env }) {
     return Response.json({ error: "address or lat+lng is required" }, { status: 400, headers: CORS });
   }
 
-  // Fetch satellite tile from Google Static Maps
-  const satelliteUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${center}&zoom=${SATELLITE_ZOOM}&size=${SATELLITE_SIZE}&maptype=satellite&key=${googleApiKey}`;
+  // Fetch satellite tile from Google Static Maps (Maps key + Referer)
+  const satelliteUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${center}&zoom=${SATELLITE_ZOOM}&size=${SATELLITE_SIZE}&maptype=satellite&key=${mapsApiKey}`;
 
   let satelliteBase64: string;
   let satelliteMimeType = "image/png";
 
   try {
-    const tileRes = await fetch(satelliteUrl);
+    const tileRes = await fetch(satelliteUrl, { headers: { Referer: MAPS_REFERER } });
     if (!tileRes.ok) {
       return Response.json(
         { error: `Google Static Maps error: ${tileRes.status}` },
@@ -179,7 +186,7 @@ export async function onRequestPost(ctx: { request: Request; env: Env }) {
   const finish = body.finish ?? "Matte";
   const prompt = `This is a top-down aerial satellite view of a residential home. Apply ${body.color} ${finish.toLowerCase()} finish standing seam metal roofing to all roof surfaces visible from above. Preserve the building footprint, surrounding landscape, driveway, trees, and all non-roof elements exactly. Render in the same top-down satellite perspective.`;
 
-  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:generateContent?key=${googleApiKey}`;
+  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:generateContent?key=${geminiApiKey}`;
 
   let renderBase64: string;
   let renderMimeType = "image/jpeg";
