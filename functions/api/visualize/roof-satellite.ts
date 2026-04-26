@@ -16,8 +16,9 @@ import { createClient } from "@supabase/supabase-js";
 
 const CORS = { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" };
 const MODEL_ID = "gemini-2.5-flash-image";
-const SATELLITE_ZOOM = 19;
-const SATELLITE_SIZE = "1024x1024";
+const SATELLITE_ZOOM = 20;
+const SATELLITE_SIZE = "640x640";
+const SATELLITE_SCALE = 2; // 1280px effective — max detail per Maps Static tile
 
 // Referer required to satisfy the Maps key's Website restriction from server-side
 const MAPS_REFERER = "https://roofing-experts-sales-tool.pages.dev/";
@@ -133,7 +134,7 @@ export async function onRequestPost(ctx: { request: Request; env: Env }) {
   }
 
   // Fetch satellite tile from Google Static Maps (Maps key + Referer)
-  const satelliteUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${center}&zoom=${SATELLITE_ZOOM}&size=${SATELLITE_SIZE}&maptype=satellite&key=${mapsApiKey}`;
+  const satelliteUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${center}&zoom=${SATELLITE_ZOOM}&size=${SATELLITE_SIZE}&scale=${SATELLITE_SCALE}&maptype=satellite&key=${mapsApiKey}`;
 
   let satelliteBase64: string;
   let satelliteMimeType = "image/png";
