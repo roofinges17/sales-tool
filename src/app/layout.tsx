@@ -20,6 +20,10 @@ const publicSans = Public_Sans({
 export const metadata: Metadata = {
   title: "Roofing Experts CRM · Sales",
   description: "Sales tool for Roofing Experts field team",
+  // GCP Maps key has a Website restriction scoped to the root origin.
+  // "origin" policy ensures all API calls (incl. Places API) send only
+  // the origin as Referer regardless of which page the user is on.
+  referrer: "origin",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
