@@ -80,8 +80,8 @@ export async function onRequestPost(ctx: { request: Request; env: Env }) {
   const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
   // Maps key (has Static Maps + Street View enabled, requires Referer header)
   const mapsApiKey = env.NEXT_PUBLIC_GOOGLE_MAPS_STATIC_KEY ?? env.GOOGLE_API_KEY;
-  // Gemini key (has Generative Language API enabled)
-  const geminiApiKey = env.GOOGLE_API_KEY ?? env.GEMINI_API_KEY;
+  // Gemini key — GEMINI_API_KEY preferred; GOOGLE_API_KEY may be the Maps key on this project
+  const geminiApiKey = env.GEMINI_API_KEY ?? env.GOOGLE_API_KEY;
   const dailyCap = parseInt(env.VISUALIZER_DAILY_CAP ?? "20", 10);
 
   if (!serviceKey) {

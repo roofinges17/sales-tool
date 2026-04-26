@@ -44,7 +44,7 @@ async function getUserId(request: Request, env: Env): Promise<string | null> {
 export async function onRequestPost(ctx: { request: Request; env: Env }) {
   const { request, env } = ctx;
 
-  const googleApiKey = env.GOOGLE_API_KEY ?? env.GEMINI_API_KEY;
+  const googleApiKey = env.GEMINI_API_KEY ?? env.GOOGLE_API_KEY;
   const supabaseUrl = env.SUPABASE_URL ?? "https://hlmmwtehabwywajuhghi.supabase.co";
 
   if (!googleApiKey) {
