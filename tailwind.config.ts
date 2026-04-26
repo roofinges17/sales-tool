@@ -28,10 +28,10 @@ const config: Config = {
           muted: "#52525b",
         },
         accent: {
-          DEFAULT: "#3b82f6",
-          light: "#60a5fa",
-          subtle: "rgba(59,130,246,0.12)",
-          hover: "#2563eb",
+          DEFAULT: "#0072E5",
+          light: "#3b9cf5",
+          subtle: "rgba(0,114,229,0.12)",
+          hover: "#005cc4",
         },
         status: {
           green: "#22c55e",
@@ -50,11 +50,11 @@ const config: Config = {
         caption: ["0.75rem", { lineHeight: "1rem" }],
       },
       backgroundImage: {
-        "gradient-accent": "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
+        "gradient-accent": "linear-gradient(135deg, #0072E5 0%, #005cc4 100%)",
       },
       boxShadow: {
-        "glow-sm": "0 0 12px rgba(59,130,246,0.3)",
-        glow: "0 0 20px rgba(59,130,246,0.5)",
+        "glow-sm": "0 0 12px rgba(0,114,229,0.3)",
+        glow: "0 0 20px rgba(0,114,229,0.5)",
       },
       transitionTimingFunction: {
         smooth: "cubic-bezier(0.4, 0, 0.2, 1)",

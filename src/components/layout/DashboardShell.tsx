@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { NavBar } from "@/components/layout/NavBar";
+import { TrustFooter } from "@/components/layout/TrustFooter";
 import type { Profile } from "@/types";
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
@@ -50,9 +51,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen" style={{ background: "var(--bg)" }}>
+    <div className="min-h-screen flex flex-col" style={{ background: "var(--bg)" }}>
       <NavBar profile={profile} />
-      <main className="mx-auto max-w-7xl px-6 py-8">{children}</main>
+      <main className="mx-auto w-full max-w-7xl flex-1 px-6 py-8">{children}</main>
+      <TrustFooter variant="dense" />
     </div>
   );
 }

@@ -538,7 +538,23 @@ export default function AcceptPage() {
           )}
         </div>
 
-        <p className="mt-6 text-center text-xs text-zinc-600">Roofing Experts · roofingex.com</p>
+        {/* Trust signals — Concept A: credentials visible on customer-facing page */}
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
+          {[
+            { label: "CCC1331656", sub: "State Certified" },
+            { label: "BBB A+", sub: "Accredited" },
+            { label: "Miami-Dade NOA", sub: "Certified" },
+          ].map((t) => (
+            <span key={t.label} className="flex items-center gap-1 text-xs text-zinc-600">
+              <svg className="h-2.5 w-2.5 shrink-0 text-brand" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-.52 3.64 3.745 3.745 0 01-3.64.521A3.745 3.745 0 0112 21a3.745 3.745 0 01-3.248-1.771 3.745 3.745 0 01-3.64-.521 3.745 3.745 0 01-.52-3.64A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 01.52-3.64 3.745 3.745 0 013.64-.521A3.745 3.745 0 0112 3a3.745 3.745 0 013.248 1.771 3.745 3.745 0 013.64.521 3.745 3.745 0 01.52 3.64A3.745 3.745 0 0121 12z" />
+              </svg>
+              <span className="font-semibold text-zinc-500">{t.label}</span>
+              <span>· {t.sub}</span>
+            </span>
+          ))}
+        </div>
+        <p className="mt-3 text-center text-xs text-zinc-600">Roofing Experts · roofingex.com</p>
       </div>
     </div>
   );

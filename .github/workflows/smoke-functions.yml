@@ -1,0 +1,47 @@
+name: Smoke — CF Pages Functions
+
+on:
+  schedule:
+    # Every 30 minutes — external vantage point for CF Pages endpoints
+    - cron: '*/30 * * * *'
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'Override target URL (default: prod pages.dev)'
+        required: false
+        default: ''
+
+jobs:
+  smoke:
+    name: CF Functions Smoke Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt-get install -y jq curl
+          chmod +x scripts/smoke-test.sh
+
+      - name: Run smoke test
+        env:
+          # BASE_URL: defaults to prod in the script. Override here for staging:
+          # BASE_URL: https://staging.roofing-experts-sales-tool.pages.dev
+          # No secrets required — tests public endpoints + auth guard (401 check)
+          BASE_URL: ${{ github.event.inputs.base_url || '' }}
+          TIMEOUT: '20'
+        run: ./scripts/smoke-test.sh
+
+      # Secrets parity note:
+      # This workflow requires NO secrets — /api/address-intel and /api/solar are
+      # public endpoints; /api/visualize/roof is tested at the auth guard only (401).
+      # If you add a full-visualize step (manual only — see runbook), you would need:
+      #   SUPABASE_ADMIN_EMAIL / SUPABASE_ADMIN_PASSWORD  (to mint a JWT)
+      # CF Pages env var parity:
+      #   CF Pages uses SUPABASE_URL (not NEXT_PUBLIC_SUPABASE_URL) in Functions.
+      #   Verify this binding is set in CF Pages dashboard if visualize/roof 401 breaks.

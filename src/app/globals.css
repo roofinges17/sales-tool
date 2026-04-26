@@ -2,23 +2,34 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Concept A: Credentials-First ───────────────────────���─────────────────────
+   Dark professional. Brand accent aligned to roofingex.com #0072E5 blue.
+   Formal, dense, authority-forward. Trust signals on every surface.
+   ─────────────────────────────────────────────────────────────────────────── */
 :root {
-  --bg: #0a0a0a;
-  --surface-1: #111111;
-  --surface-2: #1a1a1a;
-  --surface-3: #262626;
-  --border: #27272a;
-  --border-strong: #3f3f46;
-  --text-primary: #f5f5f5;
+  --bg: #080808;
+  --surface-1: #0f0f0f;
+  --surface-2: #161616;
+  --surface-3: #1e1e1e;
+  --border: #232326;
+  --border-strong: #3a3a3e;
+  --text-primary: #f4f4f5;
   --text-secondary: #a1a1aa;
   --text-tertiary: #71717a;
   --text-muted: #52525b;
-  --accent: #3b82f6;
+  --accent: #0072E5;
   --brand: #CC2A2E;
   --status-green: #22c55e;
   --status-orange: #f97316;
   --status-red: #ef4444;
   --status-purple: #a855f7;
+
+  /* Trust footer tokens */
+  --trust-bg: #0a0a0a;
+  --trust-border: #232326;
+  --trust-label: #e4e4e7;
+  --trust-sublabel: #71717a;
+  --trust-heading: #52525b;
 }
 
 html, body {
@@ -29,13 +40,52 @@ html, body {
 
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-heading, sans-serif);
+  letter-spacing: -0.015em;
 }
 
 * {
   box-sizing: border-box;
 }
 
-/* Google Places Autocomplete dropdown — brand override */
+/* ── Trust footer color tokens (used by TrustFooter.tsx) ─────────────────── */
+.trust-footer,
+.trust-footer-dense,
+.trust-footer-strip {
+  --tw-border-opacity: 1;
+}
+
+.border-trust-border { border-color: var(--trust-border); }
+.bg-trust-bg { background-color: var(--trust-bg); }
+.text-trust-label { color: var(--trust-label); }
+.text-trust-sublabel { color: var(--trust-sublabel); }
+.text-trust-heading { color: var(--trust-heading); }
+
+/* ── Concept A: nav credentials badge ─────────────────────���─────────────────
+   Adds a subtle verified strip between logo and nav links.
+   ─────────────────────────────���──────────────────────────────��────────────── */
+.credentials-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #a1a1aa;
+  border: 1px solid #232326;
+  background: #0f0f0f;
+  white-space: nowrap;
+}
+.credentials-badge .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #CC2A2E;
+  flex-shrink: 0;
+}
+
+/* ── Google Places Autocomplete ──────────────────────��───────────────────── */
 .pac-container {
   background: #18181b;
   border: 1px solid #3f3f46;

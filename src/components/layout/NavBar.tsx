@@ -80,6 +80,10 @@ export function NavBar({ profile }: NavBarProps) {
               Sales
             </span>
           </a>
+          <span className="credentials-badge hidden sm:inline-flex">
+            <span className="dot" />
+            CCC1331656 · Licensed &amp; Insured
+          </span>
           <div className="hidden items-center gap-0.5 lg:flex">
             {navLinks.map((link) => (
               <a

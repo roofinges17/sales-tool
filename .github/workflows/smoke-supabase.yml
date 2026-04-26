@@ -1,0 +1,50 @@
+name: Smoke — Supabase Tables
+
+on:
+  schedule:
+    # Every 5 minutes — no quota cost, fast, high-value early warning
+    - cron: '*/5 * * * *'
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  smoke:
+    name: Supabase Table Smoke Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt-get install -y jq curl
+          chmod +x scripts/supabase-smoke.sh
+
+      - name: Run Supabase smoke test
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TIMEOUT: '15'
+        run: ./scripts/supabase-smoke.sh
+
+# ── Required GitHub Actions secrets ──────────────────────────────────────────
+# Set these in: Settings > Secrets and variables > Actions
+#
+# Secret name                  Maps to                         Example value
+# --------------------------   ------------------------------- --------------------------------
+# SUPABASE_URL                 Supabase project REST URL       https://hlmmwtehabwywajuhghi.supabase.co
+# SUPABASE_SERVICE_ROLE_KEY    Service role JWT (not anon key) sb_secret_vmXKZl2f-...
+#
+# ── CF Pages env var parity check ────────────────────────────────────────────
+# CF Pages Functions reference env.SUPABASE_URL (see functions/api/visualize/roof.ts).
+# The Next.js app uses NEXT_PUBLIC_SUPABASE_URL — these are DIFFERENT bindings.
+# Drift risk: if only NEXT_PUBLIC_SUPABASE_URL is set in CF Pages dashboard but not
+# SUPABASE_URL, the visualize/roof function falls back to its hardcoded URL
+# (currently correct, but brittle if the project migrates to a new Supabase org).
+# Recommendation: set SUPABASE_URL explicitly in CF Pages env to eliminate the fallback.
+#
+# Secret SUPABASE_URL here MUST match the value of SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL)
+# in the CF Pages dashboard and the .env file.
