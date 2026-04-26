@@ -68,8 +68,12 @@ async function fetchPhotoBase64(url: string): Promise<{ data: string; mimeType: 
   if (!res.ok) throw new Error(`Failed to fetch photo: ${res.status}`);
   const mimeType = res.headers.get("content-type") ?? "image/jpeg";
   const buffer = await res.arrayBuffer();
-  const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
-  return { data: base64, mimeType };
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 8192) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+  }
+  return { data: btoa(binary), mimeType };
 }
 
 export async function onRequestPost(ctx: { request: Request; env: Env }) {

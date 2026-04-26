@@ -141,7 +141,13 @@ export async function onRequestPost(ctx: { request: Request; env: Env }) {
     }
     satelliteMimeType = tileRes.headers.get("content-type") ?? "image/png";
     const buffer = await tileRes.arrayBuffer();
-    satelliteBase64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+    // Chunked to avoid call-stack overflow on large satellite tiles
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 8192) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+    }
+    satelliteBase64 = btoa(binary);
   } catch (err) {
     return Response.json(
       { error: `Satellite tile fetch failed: ${err instanceof Error ? err.message : "unknown"}` },

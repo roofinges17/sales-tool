@@ -167,45 +167,25 @@ export default function Step6Generate() {
 
       setVizResolvedAddress(address);
 
-      const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_STATIC_KEY;
-      if (!apiKey) {
-        setVizError("Maps API key not configured.");
-        return;
-      }
+      // Server-side proxy: avoids Maps key Website restriction on preview domains
+      const svRes = await authedFetch(`/api/streetview?address=${encodeURIComponent(address)}`);
+      const svJson = (await svRes.json()) as { base64?: string; mime_type?: string; error?: string; no_imagery?: boolean };
 
-      const svUrl = `https://maps.googleapis.com/maps/api/streetview?size=1024x768&location=${encodeURIComponent(address)}&fov=80&pitch=0&key=${apiKey}`;
-      const svRes = await fetch(svUrl);
-
-      if (!svRes.ok) {
-        // No Street View coverage — auto-route to satellite on render
-        setVizForceSatellite(true);
-        setVizSatelliteHint("No Street View coverage — will render using satellite view.");
-        return;
-      }
-
-      const contentType = svRes.headers.get("content-type") ?? "";
-      const blob = await svRes.blob();
-
-      // Google returns a grey placeholder (~4KB) when no imagery exists
-      if (!contentType.startsWith("image/") || blob.size < 5000) {
+      if (!svRes.ok || svJson.no_imagery) {
         setVizForceSatellite(true);
         setVizSatelliteHint("No Street View imagery available — will render using satellite view.");
         return;
       }
 
-      // Convert to base64
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const result = reader.result as string;
-          resolve(result.split(",")[1] ?? result);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
+      if (!svJson.base64) {
+        setVizForceSatellite(true);
+        setVizSatelliteHint("Street View unavailable — will render using satellite view.");
+        return;
+      }
 
-      const dataUrl = `data:${contentType};base64,${base64}`;
-      setVizStreetViewBase64(base64);
+      const mimeType = svJson.mime_type ?? "image/jpeg";
+      const dataUrl = `data:${mimeType};base64,${svJson.base64}`;
+      setVizStreetViewBase64(svJson.base64);
       setVizPhotoFile(null);
       setVizPhotoPreview(dataUrl);
       setVizRenderUrl(null);
