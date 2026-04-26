@@ -1,17 +1,23 @@
-// POST /api/visualize/roof
-// Gemini 2.5 Flash Image AI roof visualizer — generates a photoreal render of the
-// customer's home with the selected metal roof color applied.
+// POST /api/visualize/roof-satellite
+// Satellite-path fallback for the roof visualizer.
+// Used when Street View is unavailable (HOA-gated, no coverage) or when the
+// Flash vision score indicates heavy tree occlusion (<30% roof visible).
 //
-// Input:  { photo_base64: string, mime_type?: string, color: string, finish?: string, quote_id?: string }
-// Output: { render_url: string }
+// Input:  { lat: number, lng: number, color: string, finish?: string, quote_id?: string }
+// Output: { before_url: string, after_url: string }
 //
-// Rate limit: VISUALIZER_DAILY_CAP (default 20) renders per user per day, tracked
-// in visualizer_render_log. Service role writes the log; authenticated JWT required.
+// The "before" image is the satellite tile itself (served as a data URL via Supabase storage).
+// The "after" image is the Gemini-rendered version with the new roof applied.
+//
+// Cost: 1 Static Maps tile (free, covered by $200/mo Google credit) +
+//       1 Gemini 2.5 Flash Image call (~$0.035). Total unchanged vs. street-view path.
 
 import { createClient } from "@supabase/supabase-js";
 
 const CORS = { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" };
 const MODEL_ID = "gemini-2.5-flash-image";
+const SATELLITE_ZOOM = 19;
+const SATELLITE_SIZE = "1024x1024";
 
 interface Env {
   SUPABASE_URL?: string;
@@ -22,9 +28,9 @@ interface Env {
 }
 
 interface RequestBody {
-  photo_base64?: string;
-  photo_url?: string;
-  mime_type?: string;
+  address?: string;
+  lat?: number;
+  lng?: number;
   color: string;
   finish?: string;
   quote_id?: string;
@@ -63,15 +69,6 @@ async function checkRateLimit(
   return (count ?? 0) < dailyCap;
 }
 
-async function fetchPhotoBase64(url: string): Promise<{ data: string; mimeType: string }> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to fetch photo: ${res.status}`);
-  const mimeType = res.headers.get("content-type") ?? "image/jpeg";
-  const buffer = await res.arrayBuffer();
-  const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
-  return { data: base64, mimeType };
-}
-
 export async function onRequestPost(ctx: { request: Request; env: Env }) {
   const { request, env } = ctx;
 
@@ -87,7 +84,6 @@ export async function onRequestPost(ctx: { request: Request; env: Env }) {
     return Response.json({ error: "GOOGLE_API_KEY / GEMINI_API_KEY not configured" }, { status: 500, headers: CORS });
   }
 
-  // Auth — require valid sales-tool JWT
   const userId = await getUserId(request, env);
   if (!userId) {
     return Response.json({ error: "Unauthorized" }, { status: 401, headers: CORS });
@@ -95,7 +91,6 @@ export async function onRequestPost(ctx: { request: Request; env: Env }) {
 
   const sb = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
 
-  // Rate limit: per-user per-day
   const withinCap = await checkRateLimit(sb, userId, dailyCap);
   if (!withinCap) {
     await sb.from("visualizer_render_log").insert({
@@ -120,30 +115,64 @@ export async function onRequestPost(ctx: { request: Request; env: Env }) {
     return Response.json({ error: "color is required" }, { status: 400, headers: CORS });
   }
 
-  // Resolve photo to base64
-  let photoBase64: string;
-  let mimeType = body.mime_type ?? "image/jpeg";
+  const center = body.address
+    ? encodeURIComponent(body.address)
+    : (typeof body.lat === "number" && typeof body.lng === "number")
+      ? `${body.lat},${body.lng}`
+      : null;
+
+  if (!center) {
+    return Response.json({ error: "address or lat+lng is required" }, { status: 400, headers: CORS });
+  }
+
+  // Fetch satellite tile from Google Static Maps
+  const satelliteUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${center}&zoom=${SATELLITE_ZOOM}&size=${SATELLITE_SIZE}&maptype=satellite&key=${googleApiKey}`;
+
+  let satelliteBase64: string;
+  let satelliteMimeType = "image/png";
+
   try {
-    if (body.photo_base64) {
-      photoBase64 = body.photo_base64;
-    } else if (body.photo_url) {
-      const fetched = await fetchPhotoBase64(body.photo_url);
-      photoBase64 = fetched.data;
-      mimeType = fetched.mimeType;
-    } else {
-      return Response.json({ error: "photo_base64 or photo_url is required" }, { status: 400, headers: CORS });
+    const tileRes = await fetch(satelliteUrl);
+    if (!tileRes.ok) {
+      return Response.json(
+        { error: `Google Static Maps error: ${tileRes.status}` },
+        { status: 502, headers: CORS },
+      );
     }
+    satelliteMimeType = tileRes.headers.get("content-type") ?? "image/png";
+    const buffer = await tileRes.arrayBuffer();
+    satelliteBase64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
   } catch (err) {
     return Response.json(
-      { error: `Failed to load photo: ${err instanceof Error ? err.message : "unknown"}` },
-      { status: 400, headers: CORS },
+      { error: `Satellite tile fetch failed: ${err instanceof Error ? err.message : "unknown"}` },
+      { status: 502, headers: CORS },
     );
   }
 
-  const finish = body.finish ?? "Matte";
-  const prompt = `Replace this roof with standing seam metal in ${body.color}, ${finish.toLowerCase()} finish. Preserve all other elements of the image including landscaping, vehicles, sky, lighting, and building geometry. Keep the same perspective and scale. If trees, foliage, or vegetation obscure significant portions of the roof, intelligently remove them and render the clean roof surface as if no occlusion existed. Preserve the rest of the scene (sky, walls, ground, surroundings) exactly as in the source image.`;
+  // Upload satellite "before" image to Supabase storage
+  const timestamp = Date.now();
+  const quoteSegment = body.quote_id ?? "no-quote";
+  const beforePath = `${userId}/${quoteSegment}/${timestamp}-satellite-before.png`;
+  const beforeBytes = Uint8Array.from(atob(satelliteBase64), (c) => c.charCodeAt(0));
 
-  // Call Gemini API
+  const { error: beforeUploadErr } = await sb.storage
+    .from("visualizer-renders")
+    .upload(beforePath, beforeBytes, { contentType: satelliteMimeType, upsert: false });
+
+  if (beforeUploadErr) {
+    return Response.json(
+      { error: `Before-image upload failed: ${beforeUploadErr.message}` },
+      { status: 500, headers: CORS },
+    );
+  }
+
+  const { data: beforeUrlData } = sb.storage.from("visualizer-renders").getPublicUrl(beforePath);
+  const beforeUrl = beforeUrlData.publicUrl;
+
+  // Gemini photoshop: apply roof color from aerial perspective
+  const finish = body.finish ?? "Matte";
+  const prompt = `This is a top-down aerial satellite view of a residential home. Apply ${body.color} ${finish.toLowerCase()} finish standing seam metal roofing to all roof surfaces visible from above. Preserve the building footprint, surrounding landscape, driveway, trees, and all non-roof elements exactly. Render in the same top-down satellite perspective.`;
+
   const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:generateContent?key=${googleApiKey}`;
 
   let renderBase64: string;
@@ -156,13 +185,11 @@ export async function onRequestPost(ctx: { request: Request; env: Env }) {
       body: JSON.stringify({
         contents: [{
           parts: [
-            { inline_data: { mime_type: mimeType, data: photoBase64 } },
+            { inline_data: { mime_type: satelliteMimeType, data: satelliteBase64 } },
             { text: prompt },
           ],
         }],
-        generationConfig: {
-          responseModalities: ["IMAGE"],
-        },
+        generationConfig: { responseModalities: ["IMAGE"] },
       }),
     });
 
@@ -175,10 +202,10 @@ export async function onRequestPost(ctx: { request: Request; env: Env }) {
         finish,
         prompt,
         status: "error",
-        error: `Gemini ${geminiRes.status}: ${errText.slice(0, 500)}`,
+        error: `Gemini satellite ${geminiRes.status}: ${errText.slice(0, 500)}`,
       });
       return Response.json(
-        { error: `Gemini API error (${geminiRes.status}). If this is a 404, the model ID may need updating.`, detail: errText.slice(0, 200) },
+        { error: `Gemini API error (${geminiRes.status})`, detail: errText.slice(0, 200) },
         { status: 502, headers: CORS },
       );
     }
@@ -201,10 +228,10 @@ export async function onRequestPost(ctx: { request: Request; env: Env }) {
         finish,
         prompt,
         status: "error",
-        error: `No image in Gemini response: ${raw}`,
+        error: `No image in Gemini satellite response: ${raw}`,
       });
       return Response.json(
-        { error: "Gemini did not return an image. Check model ID or prompt.", raw: raw },
+        { error: "Gemini did not return an image for the satellite render.", raw },
         { status: 502, headers: CORS },
       );
     }
@@ -213,41 +240,28 @@ export async function onRequestPost(ctx: { request: Request; env: Env }) {
     renderMimeType = imagePart.inlineData.mimeType ?? "image/jpeg";
   } catch (err) {
     return Response.json(
-      { error: `Gemini request failed: ${err instanceof Error ? err.message : "unknown"}` },
+      { error: `Gemini satellite request failed: ${err instanceof Error ? err.message : "unknown"}` },
       { status: 502, headers: CORS },
     );
   }
 
-  // Upload to Supabase storage: visualizer-renders/{user_id}/{quote_id or 'no-quote'}/{timestamp}.jpg
-  const quoteSegment = body.quote_id ?? "no-quote";
-  const timestamp = Date.now();
-  const storagePath = `${userId}/${quoteSegment}/${timestamp}.jpg`;
+  // Upload "after" render
+  const afterPath = `${userId}/${quoteSegment}/${timestamp}-satellite-after.jpg`;
+  const afterBytes = Uint8Array.from(atob(renderBase64), (c) => c.charCodeAt(0));
 
-  const imageBytes = Uint8Array.from(atob(renderBase64), (c) => c.charCodeAt(0));
-
-  const { error: uploadErr } = await sb.storage
+  const { error: afterUploadErr } = await sb.storage
     .from("visualizer-renders")
-    .upload(storagePath, imageBytes, {
-      contentType: renderMimeType,
-      upsert: false,
-    });
+    .upload(afterPath, afterBytes, { contentType: renderMimeType, upsert: false });
 
-  if (uploadErr) {
-    await sb.from("visualizer_render_log").insert({
-      user_id: userId,
-      quote_id: body.quote_id ?? null,
-      color: body.color,
-      finish,
-      prompt,
-      status: "error",
-      error: `Storage upload failed: ${uploadErr.message}`,
-    });
-    return Response.json({ error: `Storage upload failed: ${uploadErr.message}` }, { status: 500, headers: CORS });
+  if (afterUploadErr) {
+    return Response.json(
+      { error: `After-image upload failed: ${afterUploadErr.message}` },
+      { status: 500, headers: CORS },
+    );
   }
 
-  // Get public URL
-  const { data: urlData } = sb.storage.from("visualizer-renders").getPublicUrl(storagePath);
-  const renderUrl = urlData.publicUrl;
+  const { data: afterUrlData } = sb.storage.from("visualizer-renders").getPublicUrl(afterPath);
+  const afterUrl = afterUrlData.publicUrl;
 
   // Log success
   await sb.from("visualizer_render_log").insert({
@@ -257,10 +271,10 @@ export async function onRequestPost(ctx: { request: Request; env: Env }) {
     finish,
     prompt,
     status: "success",
-    render_url: renderUrl,
+    render_url: afterUrl,
   });
 
-  return Response.json({ render_url: renderUrl, model_id: MODEL_ID }, { headers: CORS });
+  return Response.json({ before_url: beforeUrl, after_url: afterUrl, model_id: MODEL_ID, path: "satellite" }, { headers: CORS });
 }
 
 export async function onRequestOptions() {

@@ -86,6 +86,10 @@ export default function Step6Generate() {
   const [vizModelId, setVizModelId] = useState<string | null>(null);
   const [vizStreetViewLoading, setVizStreetViewLoading] = useState(false);
   const [vizStreetViewBase64, setVizStreetViewBase64] = useState<string | null>(null);
+  const [vizForceSatellite, setVizForceSatellite] = useState(false);
+  const [vizIsSatellite, setVizIsSatellite] = useState(false);
+  const [vizSatelliteHint, setVizSatelliteHint] = useState<string | null>(null);
+  const [vizResolvedAddress, setVizResolvedAddress] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Animate progress 0→90% over ~15s while rendering; snap to 100 on completion
@@ -113,6 +117,31 @@ export default function Step6Generate() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  async function resolveAddress(): Promise<string | null> {
+    if (state.isNewCustomer) {
+      const parts = [
+        state.newCustomer.billing_address_line1,
+        state.newCustomer.billing_city,
+        state.newCustomer.billing_state,
+      ].filter(Boolean);
+      return parts.length > 0 ? parts.join(", ") : null;
+    } else if (state.existingAccountId) {
+      try {
+        const { data } = await supabase()
+          .from("accounts")
+          .select("billing_address_line1, billing_city, billing_state")
+          .eq("id", state.existingAccountId)
+          .single();
+        if (data) {
+          const d = data as { billing_address_line1?: string | null; billing_city?: string | null; billing_state?: string | null };
+          const parts = [d.billing_address_line1, d.billing_city, d.billing_state].filter(Boolean);
+          return parts.length > 0 ? parts.join(", ") : null;
+        }
+      } catch { /* ignore */ }
+    }
+    return null;
+  }
+
   function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -126,35 +155,17 @@ export default function Step6Generate() {
   async function handleFetchStreetView() {
     setVizStreetViewLoading(true);
     setVizError(null);
+    setVizSatelliteHint(null);
+    setVizForceSatellite(false);
 
     try {
-      // Resolve address — new customer from state, existing customer from Supabase
-      let address: string | null = null;
-      if (state.isNewCustomer) {
-        const parts = [
-          state.newCustomer.billing_address_line1,
-          state.newCustomer.billing_city,
-          state.newCustomer.billing_state,
-        ].filter(Boolean);
-        address = parts.length > 0 ? parts.join(", ") : null;
-      } else if (state.existingAccountId) {
-        const { data, error: addrErr } = await supabase()
-          .from("accounts")
-          .select("billing_address_line1, billing_city, billing_state")
-          .eq("id", state.existingAccountId)
-          .single();
-        if (addrErr) { setVizError("Could not load customer address. Try again."); return; }
-        if (data) {
-          const d = data as { billing_address_line1?: string | null; billing_city?: string | null; billing_state?: string | null };
-          const parts = [d.billing_address_line1, d.billing_city, d.billing_state].filter(Boolean);
-          address = parts.length > 0 ? parts.join(", ") : null;
-        }
-      }
-
+      const address = await resolveAddress();
       if (!address) {
         setVizError("Add an address in Step 3 (Customer) to use Street View.");
         return;
       }
+
+      setVizResolvedAddress(address);
 
       const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_STATIC_KEY;
       if (!apiKey) {
@@ -166,7 +177,9 @@ export default function Step6Generate() {
       const svRes = await fetch(svUrl);
 
       if (!svRes.ok) {
-        setVizError("Street View request failed. Please upload a photo instead.");
+        // No Street View coverage — auto-route to satellite on render
+        setVizForceSatellite(true);
+        setVizSatelliteHint("No Street View coverage — will render using satellite view.");
         return;
       }
 
@@ -175,7 +188,8 @@ export default function Step6Generate() {
 
       // Google returns a grey placeholder (~4KB) when no imagery exists
       if (!contentType.startsWith("image/") || blob.size < 5000) {
-        setVizError("No Street View imagery available for this address. Please upload a photo instead.");
+        setVizForceSatellite(true);
+        setVizSatelliteHint("No Street View imagery available — will render using satellite view.");
         return;
       }
 
@@ -203,8 +217,8 @@ export default function Step6Generate() {
   }
 
   async function handleGenerateRender() {
-    if (!vizPhotoFile && !vizPhotoPreview) {
-      setVizError("Upload a photo first.");
+    if (!vizPhotoFile && !vizPhotoPreview && !vizForceSatellite) {
+      setVizError("Upload a photo or fetch Street View first.");
       return;
     }
     if (!vizColor) {
@@ -216,36 +230,77 @@ export default function Step6Generate() {
     setVizError(null);
 
     try {
-      let photoBase64: string | undefined;
-      let mimeType = "image/jpeg";
-      if (vizPhotoFile) {
-        photoBase64 = await fileToBase64(vizPhotoFile);
-        mimeType = vizPhotoFile.type || "image/jpeg";
-      } else if (vizStreetViewBase64) {
-        photoBase64 = vizStreetViewBase64;
-        mimeType = "image/jpeg";
+      let useSatellite = vizForceSatellite;
+
+      // Flash vision score — runs only on Street View images, not uploaded photos
+      if (!useSatellite && vizStreetViewBase64) {
+        try {
+          const scoreRes = await authedFetch("/api/visualize/vision-score", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ photo_base64: vizStreetViewBase64, mime_type: "image/jpeg" }),
+          });
+          if (scoreRes.ok) {
+            const scoreJson = (await scoreRes.json()) as { score?: number };
+            if (typeof scoreJson.score === "number" && scoreJson.score < 30) {
+              useSatellite = true;
+            }
+          }
+        } catch { /* non-fatal — proceed with normal path */ }
       }
 
-      const res = await authedFetch("/api/visualize/roof", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          photo_base64: photoBase64,
-          mime_type: mimeType,
-          color: vizColor,
-          finish: vizFinish,
-          quote_id: editingQuoteId ?? undefined,
-        }),
-      });
+      if (useSatellite) {
+        // Resolve address if not already stored from Street View fetch
+        let address = vizResolvedAddress;
+        if (!address) address = await resolveAddress();
+        if (!address) throw new Error("Could not resolve address for satellite view.");
 
-      const json = (await res.json()) as { render_url?: string; error?: string; model_id?: string };
-      if (!res.ok || !json.render_url) {
-        throw new Error(json.error ?? "Render failed");
+        const res = await authedFetch("/api/visualize/roof-satellite", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            address,
+            color: vizColor,
+            finish: vizFinish,
+            quote_id: editingQuoteId ?? undefined,
+          }),
+        });
+        const json = (await res.json()) as { before_url?: string; after_url?: string; error?: string; model_id?: string };
+        if (!res.ok || !json.after_url) throw new Error(json.error ?? "Satellite render failed");
+        if (json.before_url) setVizPhotoPreview(json.before_url);
+        setVizRenderUrl(json.after_url);
+        setVizModelId(json.model_id ?? null);
+        setVizIsSatellite(true);
+        setVisualizerState({ imageUrl: json.after_url, color: vizColor, finish: vizFinish });
+      } else {
+        let photoBase64: string | undefined;
+        let mimeType = "image/jpeg";
+        if (vizPhotoFile) {
+          photoBase64 = await fileToBase64(vizPhotoFile);
+          mimeType = vizPhotoFile.type || "image/jpeg";
+        } else if (vizStreetViewBase64) {
+          photoBase64 = vizStreetViewBase64;
+          mimeType = "image/jpeg";
+        }
+
+        const res = await authedFetch("/api/visualize/roof", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            photo_base64: photoBase64,
+            mime_type: mimeType,
+            color: vizColor,
+            finish: vizFinish,
+            quote_id: editingQuoteId ?? undefined,
+          }),
+        });
+        const json = (await res.json()) as { render_url?: string; error?: string; model_id?: string };
+        if (!res.ok || !json.render_url) throw new Error(json.error ?? "Render failed");
+        setVizRenderUrl(json.render_url);
+        setVizModelId(json.model_id ?? null);
+        setVizIsSatellite(false);
+        setVisualizerState({ imageUrl: json.render_url, color: vizColor, finish: vizFinish });
       }
-
-      setVizRenderUrl(json.render_url);
-      setVizModelId(json.model_id ?? null);
-      setVisualizerState({ imageUrl: json.render_url, color: vizColor, finish: vizFinish });
     } catch (err) {
       setVizError(err instanceof Error ? err.message : "Render failed");
     } finally {
@@ -618,6 +673,16 @@ export default function Step6Generate() {
             {/* Photo input */}
             <div>
               <p className="text-xs font-medium text-zinc-400 mb-2">House Photo</p>
+              {/* Satellite hint — shown when Street View unavailable, satellite path queued */}
+              {vizSatelliteHint && !vizPhotoPreview && (
+                <div className="rounded-xl border border-blue-800/40 bg-blue-950/20 px-3 py-2.5 text-xs text-blue-300 flex items-center gap-2">
+                  <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064" />
+                  </svg>
+                  {vizSatelliteHint}
+                </div>
+              )}
+
               {vizPhotoPreview ? (
                 <div className="relative">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -637,11 +702,27 @@ export default function Step6Generate() {
                       setVizPhotoPreview(null);
                       setVizStreetViewBase64(null);
                       setVizRenderUrl(null);
+                      setVizForceSatellite(false);
+                      setVizIsSatellite(false);
+                      setVizSatelliteHint(null);
                     }}
                     className="absolute top-2 right-2 rounded-lg bg-zinc-900/80 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800 transition"
                   >
                     Change
                   </button>
+                  {/* Satellite toggle — shown when street view loaded */}
+                  {vizStreetViewBase64 && (
+                    <button
+                      onClick={() => setVizForceSatellite((f) => !f)}
+                      className={`absolute bottom-2 left-2 rounded-lg px-2 py-1 text-xs transition border ${
+                        vizForceSatellite
+                          ? "bg-blue-900/80 border-blue-600 text-blue-200"
+                          : "bg-zinc-900/80 border-zinc-700 text-zinc-400 hover:border-zinc-500"
+                      }`}
+                    >
+                      {vizForceSatellite ? "✓ Satellite view" : "Use satellite view"}
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -773,15 +854,22 @@ export default function Step6Generate() {
               ) : (
                 <Button
                   onClick={handleGenerateRender}
-                  disabled={!vizPhotoPreview}
+                  disabled={!vizPhotoPreview && !vizForceSatellite}
                   className="w-full"
                 >
-                  Generate Preview
+                  {vizForceSatellite && !vizPhotoPreview ? "Generate Satellite Preview" : "Generate Preview"}
                 </Button>
               )
             ) : (
               <div className="space-y-3">
-                <p className="text-xs text-zinc-500">Before / After</p>
+                <p className="text-xs text-zinc-500 flex items-center gap-2">
+                  Before / After
+                  {vizIsSatellite && (
+                    <span className="rounded-md bg-blue-900/40 border border-blue-700/40 px-1.5 py-0.5 text-xs text-blue-300">
+                      Satellite view
+                    </span>
+                  )}
+                </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {vizPhotoPreview && (
                     // eslint-disable-next-line @next/next/no-img-element
