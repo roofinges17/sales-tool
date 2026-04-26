@@ -47,8 +47,9 @@ export default function Step4Review() {
           {state.cart.map((item) => (
             <div key={item.product_id} className="px-4 py-3 flex items-center gap-2">
               <div className="flex-1 min-w-0">
-                <p className="text-sm text-zinc-100 font-medium">{item.product_name}</p>
+                <p className="text-sm text-zinc-100 font-medium truncate">{item.product_name}</p>
                 {item.unit && <p className="text-xs text-zinc-500">{item.unit}</p>}
+                <p className="text-xs text-zinc-400 sm:hidden">{formatCurrency(item.unit_price)} / unit</p>
               </div>
               <span className="w-12 sm:w-16 text-center text-sm text-zinc-400">{item.quantity}</span>
               <span className="hidden sm:block w-24 text-right text-sm text-zinc-300">{formatCurrency(item.unit_price)}</span>

@@ -49,13 +49,30 @@ export default function AdminSettingsLayout({ children }: { children: React.Reac
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  const ADMIN_ONLY_PATHS = [
+    "/admin/settings/users/",
+    "/admin/settings/departments/",
+    "/admin/settings/quickbooks/",
+    "/admin/settings/gohighlevel/",
+    "/admin/settings/google-maps/",
+    "/admin/settings/resend/",
+    "/admin/settings/ai-vision/",
+  ];
+
   useEffect(() => {
     if (!loading && profile) {
       if (profile.role === "seller") {
         router.replace("/");
+        return;
+      }
+      if (profile.role === "manager") {
+        const isAdminOnly = ADMIN_ONLY_PATHS.some((p) => pathname?.startsWith(p));
+        if (isAdminOnly) {
+          router.replace("/admin/settings/");
+        }
       }
     }
-  }, [profile, loading, router]);
+  }, [profile, loading, router, pathname]);
 
   if (loading) {
     return (

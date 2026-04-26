@@ -29,6 +29,7 @@ export interface PdfEstimateInput {
   roofColor?: string;
   roofColorHex?: string;
   visualizerImageDataUrl?: string;
+  sriAnnualSavings?: number;
   beforePhotos?: string[];
   companyName?: string;
   companyLicenseNumber?: string;
@@ -743,6 +744,17 @@ export function generateEstimatePdf(input: PdfEstimateInput): jsPDF {
     const imgH = Math.min(imgW * 0.65, C_MAX - y - 10);
     doc.addImage(input.visualizerImageDataUrl, "JPEG", MG, y, imgW, imgH);
     y += imgH + 4;
+    if (input.sriAnnualSavings && input.sriAnnualSavings > 0) {
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(9);
+      doc.setTextColor(34, 139, 34);
+      doc.text(
+        `~$${input.sriAnnualSavings.toLocaleString()}/year saved on AC vs an old dark shingle`,
+        PW / 2, y, { align: "center" }
+      );
+      doc.setTextColor(...BODY);
+      y += 6;
+    }
   }
 
   // Legacy visualization page (old PNG canvas overlay — backward compat)

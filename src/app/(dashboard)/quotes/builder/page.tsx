@@ -45,8 +45,10 @@ function StepperHeader({ currentStep }: { currentStep: number }) {
               )}
             </div>
             <span
-              className={`hidden sm:block text-sm font-medium ${
-                step.number === currentStep ? "text-zinc-100" : "text-zinc-500"
+              className={`text-sm font-medium ${
+                step.number === currentStep
+                  ? "text-zinc-100"
+                  : "hidden sm:block text-zinc-500"
               }`}
             >
               {step.label}

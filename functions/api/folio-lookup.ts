@@ -129,11 +129,25 @@ function cacheKey(address: string, county: string): string {
   return `folio:${county}:${address.toLowerCase().replace(/\s+/g, " ").trim()}`;
 }
 
+const FOLIO_RATE_LIMIT = 30; // requests per hour per IP
+
 export const onRequestPost: PagesFunction<Env> = async (ctx) => {
   const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
     "Content-Type": "application/json",
   };
+
+  // IP-based rate limit — no auth required (anon accept flow)
+  const ip = ctx.request.headers.get("CF-Connecting-IP") ?? "unknown";
+  const rlKey = `folio:ip:${ip}:${Math.floor(Date.now() / 3600000)}`;
+  const rlCount = parseInt((await ctx.env.FOLIO_CACHE.get(rlKey)) ?? "0");
+  if (rlCount >= FOLIO_RATE_LIMIT) {
+    return new Response(JSON.stringify({ error: "Rate limit exceeded" }), {
+      status: 429,
+      headers: corsHeaders,
+    });
+  }
+  await ctx.env.FOLIO_CACHE.put(rlKey, String(rlCount + 1), { expirationTtl: 7200 });
 
   try {
     const body = (await ctx.request.json()) as {

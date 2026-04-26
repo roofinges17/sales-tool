@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import { calcAnnualSriSavings } from "@/lib/sri-savings";
 
 const COLOR_HEX: Record<string, string> = {
   "Matte Black": "#1C1C1C", "Charcoal Gray": "#3F3F3F", "Mansard Brown": "#5C4033",
@@ -26,6 +27,7 @@ interface QuoteRow {
   roof_color?: string | null;
   visualizer_image_url?: string | null;
   account_name?: string | null;
+  roof_sqft?: number | null;
 }
 
 function formatCurrency(n: number) {
@@ -169,6 +171,7 @@ export default function AcceptPage() {
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [emailSentTo, setEmailSentTo] = useState<string | null>(null);
+  const [sriSavings, setSriSavings] = useState<number | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -200,6 +203,21 @@ export default function AcceptPage() {
 
       setQuote(row);
       setStatus("pending_sign");
+
+      // Compute SRI savings if visualizer was used — fetch sqft from line items
+      if (row.roof_color) {
+        const { data: lineItems } = await supabase()
+          .from("quote_line_items")
+          .select("quantity, unit")
+          .eq("quote_id", row.id);
+        const sqft = (lineItems ?? [])
+          .filter((li: { unit?: string | null }) =>
+            ["sqft", "sq ft", "square feet", "sf", "section"].includes((li.unit ?? "").toLowerCase())
+          )
+          .reduce((s: number, li: { quantity?: number }) => s + (li.quantity ?? 0), 0);
+        const result = calcAnnualSriSavings({ colorName: row.roof_color, roofSqft: sqft || null });
+        if (result) setSriSavings(result.savings);
+      }
     })();
   }, []);
 
@@ -308,6 +326,11 @@ export default function AcceptPage() {
                     alt="AI roof render"
                     className="w-full rounded-xl border border-zinc-700 object-cover"
                   />
+                  {sriSavings && (
+                    <p className="text-xs text-green-400 font-medium mt-2 text-center">
+                      ~${sriSavings.toLocaleString()}/year saved on AC vs an old dark shingle
+                    </p>
+                  )}
                 </div>
               )}
 

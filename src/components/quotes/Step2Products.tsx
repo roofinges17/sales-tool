@@ -215,7 +215,7 @@ export default function Step2Products() {
                             <button
                               onClick={onMinus}
                               disabled={!inCart}
-                              className={`w-7 h-7 rounded flex items-center justify-center text-sm font-bold transition-colors ${
+                              className={`w-11 h-11 rounded flex items-center justify-center text-sm font-bold transition-colors ${
                                 inCart ? "bg-accent/20 text-accent hover:bg-accent/30" : "opacity-30 bg-surface-3 text-text-muted cursor-not-allowed"
                               }`}
                               aria-label="Remove one"
@@ -225,7 +225,7 @@ export default function Step2Products() {
                             </span>
                             <button
                               onClick={onPlus}
-                              className={`w-7 h-7 rounded flex items-center justify-center text-sm font-bold transition-colors ${
+                              className={`w-11 h-11 rounded flex items-center justify-center text-sm font-bold transition-colors ${
                                 inCart ? "bg-accent/20 text-accent hover:bg-accent/30" : "bg-surface-2 text-text-secondary hover:bg-accent/20 hover:text-accent"
                               }`}
                               aria-label="Add one"
@@ -437,17 +437,17 @@ export default function Step2Products() {
                   key={color.name}
                   title={color.name}
                   onClick={() => setRoofColor(color.name)}
-                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium border transition-all ${
+                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium border transition-all min-w-0 max-w-[140px] ${
                     state.roofColor === color.name
                       ? "border-white bg-zinc-800 text-zinc-100"
                       : "border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
                   }`}
                 >
                   <span
-                    className="inline-block h-3 w-3 rounded-sm border border-zinc-600"
+                    className="inline-block h-3 w-3 shrink-0 rounded-sm border border-zinc-600"
                     style={{ backgroundColor: color.hex }}
                   />
-                  {color.name}
+                  <span className="truncate">{color.name}</span>
                 </button>
               ))}
             </div>
@@ -467,17 +467,17 @@ export default function Step2Products() {
                   key={color.name}
                   title={color.name}
                   onClick={() => setRoofColor(color.name)}
-                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium border transition-all ${
+                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium border transition-all min-w-0 max-w-[140px] ${
                     state.roofColor === color.name
                       ? "border-white bg-zinc-800 text-zinc-100"
                       : "border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
                   }`}
                 >
                   <span
-                    className="inline-block h-3 w-3 rounded-sm border border-zinc-600"
+                    className="inline-block h-3 w-3 shrink-0 rounded-sm border border-zinc-600"
                     style={{ backgroundColor: color.hex }}
                   />
-                  {color.name}
+                  <span className="truncate">{color.name}</span>
                 </button>
               ))}
             </div>

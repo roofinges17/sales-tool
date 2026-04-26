@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import PhotoUpload from "@/components/quotes/PhotoUpload";
 import PhotoGallery, { type ProjectPhoto } from "@/components/quotes/PhotoGallery";
 import { isUuid } from "@/lib/uuid";
+import { calcAnnualSriSavings } from "@/lib/sri-savings";
 
 interface QuoteLineItem {
   id: string;
@@ -260,6 +261,13 @@ function QuoteDetailContent() {
       }
     }
 
+    const pdfRoofSqft = (quote.quote_line_items ?? [])
+      .filter((li: { unit?: string | null; quantity?: number }) =>
+        ["sqft", "sq ft", "square feet", "sf", "section"].includes((li.unit ?? "").toLowerCase())
+      )
+      .reduce((s: number, li: { quantity?: number }) => s + (li.quantity ?? 0), 0);
+    const sriResult = calcAnnualSriSavings({ colorName: roofColorName, roofSqft: pdfRoofSqft || null });
+
     await downloadEstimatePdf({
       estimateNumber: quote.name,
       date: quote.created_at,
@@ -275,6 +283,7 @@ function QuoteDetailContent() {
       visualizerImageDataUrl: visualizerImageDataUrl,
       visualizationImageDataUrl: legacyImageDataUrl,
       visualizationColorName: roofColorName ?? legacyColorName,
+      sriAnnualSavings: sriResult?.savings,
       beforePhotos: beforePhotoUrls.length > 0 ? beforePhotoUrls : undefined,
       companyName: cs?.company_name ?? undefined,
       companyLicenseNumber: cs?.license_number ?? undefined,

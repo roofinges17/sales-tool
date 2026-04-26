@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { useQuoteBuilder } from "@/lib/contexts/QuoteBuilderContext";
 import { Button } from "@/components/ui/Button";
 import { ENGLERT_COLORS, VISUALIZER_FINISHES, type VisualizerFinish, findEnglertColor } from "@/lib/visualizer-config";
+import { calcAnnualSriSavings } from "@/lib/sri-savings";
 
 function formatCurrency(v: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v);
@@ -63,6 +64,12 @@ export default function Step6Generate() {
 
   const folioNumber = state.folioNumber;
   const roofColor = state.roofColor;
+
+  // SRI savings — derive sqft from metal/aluminum line items
+  const metalSqft = state.cart
+    .filter((i) => ["sqft", "sq ft", "square feet", "sf", "section"].includes((i.unit ?? "").toLowerCase()))
+    .reduce((sum, i) => sum + i.quantity, 0);
+  const sriSavings = calcAnnualSriSavings({ colorName: roofColor, roofSqft: metalSqft || null });
 
   // Visualizer state
   const [vizEnabled, setVizEnabled] = useState(state.visualizerEnabled);
@@ -426,6 +433,7 @@ export default function Step6Generate() {
         </div>
 
         <div className="px-8 py-6">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-zinc-700 text-xs uppercase tracking-wider text-zinc-500">
@@ -468,6 +476,7 @@ export default function Step6Generate() {
               })}
             </tbody>
           </table>
+          </div>
 
           <div className="mt-6 ml-auto w-72 space-y-2">
             <div className="flex justify-between text-sm">
@@ -722,7 +731,7 @@ export default function Step6Generate() {
             ) : (
               <div className="space-y-3">
                 <p className="text-xs text-zinc-500">Before / After</p>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {vizPhotoPreview && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={vizPhotoPreview} alt="Before" className="rounded-xl border border-zinc-700 w-full object-cover" />
@@ -730,6 +739,11 @@ export default function Step6Generate() {
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={vizRenderUrl} alt="After" className="rounded-xl border border-brand/40 w-full object-cover" />
                 </div>
+                {sriSavings && (
+                  <p className="text-xs text-green-400 font-medium">
+                    ~${sriSavings.savings.toLocaleString()}/year saved on AC vs an old dark shingle
+                  </p>
+                )}
                 {vizModelId && (
                   <p className="text-xs text-zinc-600">Model: {vizModelId}</p>
                 )}

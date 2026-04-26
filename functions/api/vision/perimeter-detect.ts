@@ -103,7 +103,7 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
   const { error: guardErr } = await guard(ctx.request, ctx.env, {
     maxBodyBytes: 0,
     ratePrefix: "perimeter-detect",
-    rateLimit: 0,
+    rateLimit: 20,
   });
   if (guardErr) return guardErr;
 
