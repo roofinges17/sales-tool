@@ -48,7 +48,7 @@ function StepperHeader({ currentStep }: { currentStep: number }) {
               className={`text-sm font-medium ${
                 step.number === currentStep
                   ? "text-zinc-100"
-                  : "hidden sm:block text-zinc-500"
+                  : "hidden lg:block text-zinc-500"
               }`}
             >
               {step.label}
@@ -56,7 +56,7 @@ function StepperHeader({ currentStep }: { currentStep: number }) {
           </div>
           {i < STEPS.length - 1 && (
             <div
-              className={`mx-1 h-px w-4 sm:mx-3 sm:w-12 md:w-20 transition-colors ${
+              className={`mx-0.5 h-px w-3 sm:mx-1 sm:w-6 lg:mx-3 lg:w-20 transition-colors ${
                 step.number < currentStep ? "bg-green-500" : "bg-zinc-800"
               }`}
             />

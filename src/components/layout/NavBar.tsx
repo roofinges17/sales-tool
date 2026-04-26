@@ -80,7 +80,7 @@ export function NavBar({ profile }: NavBarProps) {
               Sales
             </span>
           </a>
-          <div className="hidden items-center gap-0.5 md:flex">
+          <div className="hidden items-center gap-0.5 lg:flex">
             {navLinks.map((link) => (
               <a
                 key={link.href}
@@ -165,7 +165,7 @@ export function NavBar({ profile }: NavBarProps) {
 
           {/* Mobile hamburger */}
           <button
-            className="md:hidden rounded-lg p-3 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition"
+            className="lg:hidden rounded-lg p-3 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition"
             onClick={() => setMobileMenuOpen((o) => !o)}
             aria-label="Toggle menu"
           >
@@ -184,7 +184,7 @@ export function NavBar({ profile }: NavBarProps) {
 
       {/* Mobile menu */}
       {mobileMenuOpen && (
-        <div className="md:hidden border-t border-zinc-800 bg-zinc-950 px-4 py-3 space-y-1">
+        <div className="lg:hidden border-t border-zinc-800 bg-zinc-950 px-4 py-3 space-y-1">
           {allLinks.map((link) => (
             <a
               key={link.href}
