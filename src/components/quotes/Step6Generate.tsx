@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { authedFetch } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
@@ -80,12 +80,34 @@ export default function Step6Generate() {
     (state.visualizerFinish as VisualizerFinish | null) ?? "Matte",
   );
   const [vizRendering, setVizRendering] = useState(false);
+  const [vizProgress, setVizProgress] = useState(0);
   const [vizError, setVizError] = useState<string | null>(null);
   const [vizRenderUrl, setVizRenderUrl] = useState<string | null>(state.visualizerImageUrl ?? null);
   const [vizModelId, setVizModelId] = useState<string | null>(null);
   const [vizStreetViewLoading, setVizStreetViewLoading] = useState(false);
   const [vizStreetViewBase64, setVizStreetViewBase64] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Animate progress 0→90% over ~15s while rendering; snap to 100 on completion
+  useEffect(() => {
+    if (!vizRendering) {
+      if (vizProgress > 0) {
+        setVizProgress(100);
+        const t = setTimeout(() => setVizProgress(0), 600);
+        return () => clearTimeout(t);
+      }
+      return;
+    }
+    setVizProgress(0);
+    const interval = setInterval(() => {
+      setVizProgress((p) => {
+        const remaining = 90 - p;
+        return p + Math.max(0.4, remaining * 0.025);
+      });
+    }, 250);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vizRendering]);
 
   // Save state
   const [saving, setSaving] = useState(false);
@@ -729,14 +751,34 @@ export default function Step6Generate() {
             )}
 
             {!vizRenderUrl ? (
-              <Button
-                onClick={handleGenerateRender}
-                loading={vizRendering}
-                disabled={!vizPhotoPreview || vizRendering}
-                className="w-full"
-              >
-                {vizRendering ? "Generating… (10–20 sec)" : "Generate Preview"}
-              </Button>
+              vizRendering ? (
+                <div
+                  role="status"
+                  aria-busy="true"
+                  aria-label="Rendering roof visualization"
+                  className="rounded-xl border border-zinc-700 bg-zinc-900/60 px-4 py-4 space-y-2"
+                >
+                  <div className="flex items-center justify-between text-xs text-zinc-400">
+                    <span className="font-medium text-zinc-300">Rendering with Gemini AI…</span>
+                    <span>{Math.min(99, Math.round(vizProgress))}%</span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-800">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-brand via-blue-400 to-brand transition-all duration-300 ease-out"
+                      style={{ width: `${Math.min(99, vizProgress)}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-zinc-500">Usually takes 12–17 seconds — hang tight</p>
+                </div>
+              ) : (
+                <Button
+                  onClick={handleGenerateRender}
+                  disabled={!vizPhotoPreview}
+                  className="w-full"
+                >
+                  Generate Preview
+                </Button>
+              )
             ) : (
               <div className="space-y-3">
                 <p className="text-xs text-zinc-500">Before / After</p>
