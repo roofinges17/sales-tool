@@ -438,7 +438,7 @@ export default function Step6Generate() {
   const selectedVizColor = findEnglertColor(vizColor);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 overflow-x-hidden min-w-0">
       <div>
         <h2 className="text-lg font-semibold text-zinc-100">Estimate Preview</h2>
         <p className="text-sm text-zinc-500 mt-1">Review the estimate before saving.</p>
@@ -446,7 +446,7 @@ export default function Step6Generate() {
 
       {/* Estimate Preview */}
       <div className="rounded-2xl border border-zinc-700 bg-zinc-900 overflow-hidden">
-        <div className="bg-zinc-800 px-8 py-6 flex items-start justify-between">
+        <div className="bg-zinc-800 px-4 sm:px-8 py-6 flex items-start justify-between">
           <div>
             <h1 className="text-xl font-bold text-zinc-50">ESTIMATE</h1>
             <p className="text-sm text-zinc-400 mt-1">Valid for {state.validDays} days from issue date</p>
@@ -463,8 +463,8 @@ export default function Step6Generate() {
           </div>
         </div>
 
-        <div className="px-8 py-6">
-          <div className="overflow-x-auto">
+        <div className="px-4 sm:px-8 py-6">
+          <div className="overflow-x-auto min-w-0">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-zinc-700 text-xs uppercase tracking-wider text-zinc-500">
@@ -569,7 +569,7 @@ export default function Step6Generate() {
           )}
         </div>
 
-        <div className="border-t border-zinc-800 bg-zinc-950/50 px-8 py-4">
+        <div className="border-t border-zinc-800 bg-zinc-950/50 px-4 sm:px-8 py-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Internal Commission Summary</p>
           <div className="flex gap-8 text-sm">
             <div>
@@ -713,7 +713,7 @@ export default function Step6Generate() {
                     key={color.name}
                     title={color.name}
                     onClick={() => setVizColor(color.name)}
-                    className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs border transition-all ${
+                    className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs border transition-all min-h-[44px] min-w-0 ${
                       vizColor === color.name
                         ? "border-white bg-zinc-800 text-zinc-100"
                         : "border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-500"
@@ -785,10 +785,10 @@ export default function Step6Generate() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {vizPhotoPreview && (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={vizPhotoPreview} alt="Before" className="rounded-xl border border-zinc-700 w-full object-cover" />
+                    <img src={vizPhotoPreview} alt="Before" className="rounded-xl border border-zinc-700 w-full max-w-full h-auto object-cover" />
                   )}
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={vizRenderUrl} alt="After" className="rounded-xl border border-brand/40 w-full object-cover" />
+                  <img src={vizRenderUrl} alt="After" className="rounded-xl border border-brand/40 w-full max-w-full h-auto object-cover" />
                 </div>
                 {sriSavings && (
                   <p className="text-xs text-green-400 font-medium">
