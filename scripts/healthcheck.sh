@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sales-Tool 30-probe healthcheck
+# Sales-Tool 32-probe healthcheck
 # Usage: ./scripts/healthcheck.sh [PROD_URL]
 # Default target: https://roofing-experts-sales-tool.pages.dev
 
@@ -116,14 +116,16 @@ probe 25  "visualize/roof: no auth → 401"                    POST "/api/visual
 probe 26  "invite-user: no auth → 401"                       POST "/api/invite-user"                 401  '-d "{}"'
 # 2026-04-26: post-Phase-6.5 changed to 401 (auth-gated)
 probe 27  "admin/purge-user: no auth → 401"                  POST "/api/admin/purge-user"            401  '-d "{}"'
+probe 28  "comms/conversations: no auth → 401"               GET  "/api/comms/conversations"          401  ''
+probe 29  "comms/send-email: no auth → 401"                  POST "/api/comms/send-email"             401  '-d "{}"'
 
 echo ""
 echo "── CONTENT INTEGRITY PROBES ────────────────────"
 
 # Check key HTML markers are present
-probe_contains 28 "Login page has Next.js data"  GET "/login/"  "__NEXT_DATA__\|_next\|__next"
-probe_contains 29 "Accept page has Next.js data" GET "/accept/" "__NEXT_DATA__\|_next\|__next"
-probe_contains 30 "Root page has app shell"       GET "/"        "<html\|<!DOCTYPE"
+probe_contains 30 "Login page has Next.js data"  GET "/login/"  "__NEXT_DATA__\|_next\|__next"
+probe_contains 31 "Accept page has Next.js data" GET "/accept/" "__NEXT_DATA__\|_next\|__next"
+probe_contains 32 "Root page has app shell"       GET "/"        "<html\|<!DOCTYPE"
 
 echo ""
 echo "================================================="
