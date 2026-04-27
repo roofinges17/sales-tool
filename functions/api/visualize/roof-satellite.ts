@@ -77,7 +77,10 @@ async function checkRateLimit(
 export async function onRequestPost(ctx: { request: Request; env: Env }) {
   const { request, env } = ctx;
 
-  const supabaseUrl = env.SUPABASE_URL ?? "https://hlmmwtehabwywajuhghi.supabase.co";
+  const supabaseUrl = env.SUPABASE_URL;
+  if (!supabaseUrl) {
+    return Response.json({ error: "Server misconfigured: SUPABASE_URL not set" }, { status: 500, headers: CORS });
+  }
   const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
   // Maps key (has Static Maps + Street View enabled, requires Referer header)
   const mapsApiKey = env.NEXT_PUBLIC_GOOGLE_MAPS_STATIC_KEY ?? env.GOOGLE_API_KEY;

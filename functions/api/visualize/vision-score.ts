@@ -45,10 +45,13 @@ export async function onRequestPost(ctx: { request: Request; env: Env }) {
   const { request, env } = ctx;
 
   const googleApiKey = env.GEMINI_API_KEY ?? env.GOOGLE_API_KEY;
-  const supabaseUrl = env.SUPABASE_URL ?? "https://hlmmwtehabwywajuhghi.supabase.co";
+  const supabaseUrl = env.SUPABASE_URL;
 
   if (!googleApiKey) {
     return Response.json({ error: "GOOGLE_API_KEY / GEMINI_API_KEY not configured" }, { status: 500, headers: CORS });
+  }
+  if (!supabaseUrl) {
+    return Response.json({ error: "Server misconfigured: SUPABASE_URL not set" }, { status: 500, headers: CORS });
   }
 
   const userId = await getUserId(request, env);

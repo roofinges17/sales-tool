@@ -79,13 +79,16 @@ async function fetchPhotoBase64(url: string): Promise<{ data: string; mimeType: 
 export async function onRequestPost(ctx: { request: Request; env: Env }) {
   const { request, env } = ctx;
 
-  const supabaseUrl = env.SUPABASE_URL ?? "https://hlmmwtehabwywajuhghi.supabase.co";
+  const supabaseUrl = env.SUPABASE_URL;
+  if (!supabaseUrl) {
+    return Response.json({ error: "Server misconfigured: SUPABASE_URL not set" }, { status: 500, headers: CORS });
+  }
   const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
   const googleApiKey = env.GOOGLE_API_KEY ?? env.GEMINI_API_KEY;
   const dailyCap = parseInt(env.VISUALIZER_DAILY_CAP ?? "20", 10);
 
   if (!serviceKey) {
-    return Response.json({ error: "Server misconfigured" }, { status: 500, headers: CORS });
+    return Response.json({ error: "Server misconfigured: SUPABASE_SERVICE_ROLE_KEY not set" }, { status: 500, headers: CORS });
   }
   if (!googleApiKey) {
     return Response.json({ error: "GOOGLE_API_KEY / GEMINI_API_KEY not configured" }, { status: 500, headers: CORS });

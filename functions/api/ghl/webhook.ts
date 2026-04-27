@@ -61,13 +61,16 @@ function constantTimeEqual(a: string, b: string): boolean {
 export async function onRequestPost(ctx: { request: Request; env: Env }) {
   const { request, env } = ctx;
 
-  const supabaseUrl = env.SUPABASE_URL ?? "https://hlmmwtehabwywajuhghi.supabase.co";
+  const supabaseUrl = env.SUPABASE_URL;
   const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
   const webhookSecret = env.GHL_WEBHOOK_SECRET;
   const servicesIncLocationId = env.GHL_SERVICES_INC_LOCATION_ID ?? "DfkEocSccdPsDcgqrJug";
 
+  if (!supabaseUrl) {
+    return Response.json({ error: "Server misconfigured: SUPABASE_URL not set" }, { status: 500 });
+  }
   if (!serviceKey) {
-    return Response.json({ error: "SUPABASE_SERVICE_ROLE_KEY not configured" }, { status: 500 });
+    return Response.json({ error: "Server misconfigured: SUPABASE_SERVICE_ROLE_KEY not set" }, { status: 500 });
   }
 
   const rawBody = await request.text();
