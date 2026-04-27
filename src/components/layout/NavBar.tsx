@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
+import { useLang } from "@/i18n/LangContext";
+import { useT } from "@/i18n";
 import type { Profile } from "@/types";
 
 interface NavBarProps {
@@ -9,13 +11,15 @@ interface NavBarProps {
 }
 
 const navLinks = [
-  { href: "/", label: "Dashboard" },
-  { href: "/accounts/", label: "Customers" },
-  { href: "/quotes/", label: "Estimates" },
-  { href: "/sales/", label: "Contracts" },
-  { href: "/pipeline/", label: "Pipeline" },
-  { href: "/commissions/", label: "Commissions" },
-  { href: "/measure/", label: "Measure" },
+  { href: "/", labelKey: "nav.dashboard" as const },
+  { href: "/contacts/", labelKey: "nav.leads" as const },
+  { href: "/accounts/", labelKey: "nav.customers" as const },
+  { href: "/quotes/", labelKey: "nav.estimates" as const },
+  { href: "/sales/", labelKey: "nav.contracts" as const },
+  { href: "/pipeline/", labelKey: "nav.pipeline" as const },
+  { href: "/conversations/", labelKey: "nav.conversations" as const },
+  { href: "/commissions/", labelKey: "nav.commissions" as const },
+  { href: "/measure/", labelKey: "nav.measure" as const },
 ];
 
 function getInitials(name?: string | null) {
@@ -35,6 +39,8 @@ function roleLabel(role?: string | null) {
 }
 
 export function NavBar({ profile }: NavBarProps) {
+  const { lang, setLang } = useLang();
+  const tr = useT(lang);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -53,7 +59,6 @@ export function NavBar({ profile }: NavBarProps) {
     window.location.href = "/login/";
   }
 
-  // Close user menu on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
       if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
@@ -65,7 +70,7 @@ export function NavBar({ profile }: NavBarProps) {
   }, []);
 
   const allLinks = showAdmin
-    ? [...navLinks, { href: "/admin/settings/", label: "Admin" }]
+    ? [...navLinks, { href: "/admin/settings/", labelKey: "nav.admin" as const }]
     : navLinks;
 
   return (
@@ -95,7 +100,7 @@ export function NavBar({ profile }: NavBarProps) {
                     : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
                 }`}
               >
-                {link.label}
+                {tr(link.labelKey)}
               </a>
             ))}
             {showAdmin && (
@@ -111,7 +116,7 @@ export function NavBar({ profile }: NavBarProps) {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
-                Admin
+                {tr("nav.admin")}
               </a>
             )}
           </div>
@@ -119,7 +124,6 @@ export function NavBar({ profile }: NavBarProps) {
 
         {/* Right: user dropdown + mobile hamburger */}
         <div className="flex items-center gap-2">
-          {/* User dropdown */}
           {profile && (
             <div className="relative" ref={userMenuRef}>
               <button
@@ -150,6 +154,32 @@ export function NavBar({ profile }: NavBarProps) {
                       {roleLabel(profile.role)}
                     </span>
                   </div>
+                  {/* Language toggle */}
+                  <div className="px-4 py-3 border-b border-zinc-800">
+                    <p className="mb-2 text-xs font-medium text-zinc-500">{tr("profile.language")}</p>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => setLang("es")}
+                        className={`flex-1 min-h-[36px] rounded-lg py-1 text-xs font-semibold transition ${
+                          lang === "es"
+                            ? "bg-brand/20 text-brand border border-brand/40"
+                            : "text-zinc-400 hover:bg-zinc-800"
+                        }`}
+                      >
+                        ES
+                      </button>
+                      <button
+                        onClick={() => setLang("en")}
+                        className={`flex-1 min-h-[36px] rounded-lg py-1 text-xs font-semibold transition ${
+                          lang === "en"
+                            ? "bg-accent/20 text-accent border border-accent/40"
+                            : "text-zinc-400 hover:bg-zinc-800"
+                        }`}
+                      >
+                        EN
+                      </button>
+                    </div>
+                  </div>
                   {/* Actions */}
                   <div className="p-1">
                     <button
@@ -159,7 +189,7 @@ export function NavBar({ profile }: NavBarProps) {
                       <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                       </svg>
-                      Sign out
+                      {tr("profile.sign_out")}
                     </button>
                   </div>
                 </div>
@@ -199,9 +229,28 @@ export function NavBar({ profile }: NavBarProps) {
                   : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
               }`}
             >
-              {link.label}
+              {tr(link.labelKey)}
             </a>
           ))}
+          {/* Mobile language toggle */}
+          <div className="flex gap-1 pt-2">
+            <button
+              onClick={() => setLang("es")}
+              className={`flex-1 min-h-[44px] rounded-lg py-2 text-sm font-semibold transition ${
+                lang === "es" ? "bg-brand/20 text-brand" : "text-zinc-400 hover:bg-zinc-800"
+              }`}
+            >
+              ES · Español
+            </button>
+            <button
+              onClick={() => setLang("en")}
+              className={`flex-1 min-h-[44px] rounded-lg py-2 text-sm font-semibold transition ${
+                lang === "en" ? "bg-accent/20 text-accent" : "text-zinc-400 hover:bg-zinc-800"
+              }`}
+            >
+              EN · English
+            </button>
+          </div>
         </div>
       )}
     </nav>
