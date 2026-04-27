@@ -78,6 +78,15 @@ export function parseStreetAddress(raw: string) {
   return { hseNum, preDir, stName, stType };
 }
 
+// ── ArcGIS SQL escape ─────────────────────────────────────────────────────────
+// ArcGIS WHERE clause uses standard SQL string literals. Escape single quotes
+// by doubling them so user-supplied address components can't break out of the
+// string context (e.g. a street name like "O'Brien" or a crafted injection).
+
+function escapeArcGIS(s: string): string {
+  return s.replace(/'/g, "''");
+}
+
 // ── Miami-Dade ────────────────────────────────────────────────────────────────
 
 async function lookupMiamiDade(address: string): Promise<FolioData | null> {
@@ -85,9 +94,9 @@ async function lookupMiamiDade(address: string): Promise<FolioData | null> {
   if (!parsed) return null;
   const { hseNum, preDir, stName, stType } = parsed;
 
-  const conditions = [`HSE_NUM=${hseNum}`, `ST_NAME LIKE '${stName}%'`];
-  if (preDir) conditions.push(`PRE_DIR='${preDir}'`);
-  if (stType) conditions.push(`ST_TYPE='${stType}'`);
+  const conditions = [`HSE_NUM=${hseNum}`, `ST_NAME LIKE '${escapeArcGIS(stName)}%'`];
+  if (preDir) conditions.push(`PRE_DIR='${escapeArcGIS(preDir)}'`);
+  if (stType) conditions.push(`ST_TYPE='${escapeArcGIS(stType)}'`);
 
   const params = new URLSearchParams({
     where: conditions.join(" AND "),
@@ -171,8 +180,8 @@ async function lookupPalmBeach(address: string): Promise<FolioData | null> {
   if (!parsed) return null;
   const { hseNum, preDir, stName } = parsed;
 
-  const conditions = [`STREET_NUMBER='${hseNum}'`, `STREET_NAME='${stName}'`];
-  if (preDir) conditions.push(`PRE_DIR='${preDir}'`);
+  const conditions = [`STREET_NUMBER='${hseNum}'`, `STREET_NAME='${escapeArcGIS(stName)}'`];
+  if (preDir) conditions.push(`PRE_DIR='${escapeArcGIS(preDir)}'`);
 
   const params = new URLSearchParams({
     where: conditions.join(" AND "),
