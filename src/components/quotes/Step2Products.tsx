@@ -182,8 +182,13 @@ export default function Step2Products() {
 
                         const onPlus = () => {
                           if (!cartItem) {
-                            const autoQty = isRoofCode(product.code) && measuredRoof
-                              ? Math.max(1, getAutoSqft(product.code))
+                            const rawSqft = isRoofCode(product.code) && measuredRoof
+                              ? getAutoSqft(product.code)
+                              : null;
+                            const autoQty = rawSqft !== null
+                              ? Math.max(0.01, product.unit === "sq"
+                                  ? parseFloat((rawSqft / 100).toFixed(2))
+                                  : rawSqft)
                               : 1;
                             addToCart({
                               product_id: product.id,

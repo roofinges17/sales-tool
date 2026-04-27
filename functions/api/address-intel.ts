@@ -14,6 +14,7 @@ import { lookupFolio, detectCounty as countyFromZip, type FolioData } from "./_f
 
 export interface Env {
   GOOGLE_API_KEY: string;
+  NEXT_PUBLIC_GOOGLE_MAPS_STATIC_KEY?: string;
   FOLIO_CACHE?: KVNamespace;
   SOLAR_CACHE?: KVNamespace;
   SUPABASE_URL: string;
@@ -48,6 +49,7 @@ async function fetchRoofData(
   lng: number,
   apiKey: string,
   solarCache?: KVNamespace,
+  referer?: string,
 ): Promise<RoofResult | "quota_exhausted" | null> {
   const month = solarMonthTag();
   const cKey = solarCacheKey(lat, lng);
@@ -87,7 +89,7 @@ async function fetchRoofData(
         `https://solar.googleapis.com/v1/buildingInsights:findClosest` +
         `?location.latitude=${lat}&location.longitude=${lng}` +
         `&requiredQuality=${quality}&key=${apiKey}`;
-      const res = await fetch(url);
+      const res = await fetch(url, referer ? { headers: { Referer: referer } } : undefined);
       if (!res.ok) {
         if (res.status === 404 && quality === "HIGH") continue;
         return null;
@@ -290,7 +292,13 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
   });
   if (guardErr) return guardErr;
 
-  const { GOOGLE_API_KEY, FOLIO_CACHE, SOLAR_CACHE } = ctx.env;
+  const { GOOGLE_API_KEY, NEXT_PUBLIC_GOOGLE_MAPS_STATIC_KEY, FOLIO_CACHE, SOLAR_CACHE } = ctx.env;
+  // GOOGLE_API_KEY is the Gemini key (API_KEY_SERVICE_BLOCKED for solar.googleapis.com).
+  // NEXT_PUBLIC_GOOGLE_MAPS_STATIC_KEY has Solar API access but requires HTTP Referer.
+  const solarApiKey = NEXT_PUBLIC_GOOGLE_MAPS_STATIC_KEY ?? GOOGLE_API_KEY;
+  const solarReferer = NEXT_PUBLIC_GOOGLE_MAPS_STATIC_KEY
+    ? "https://roofing-experts-sales-tool.pages.dev/"
+    : undefined;
 
   let body: { address?: string; lat?: number; lng?: number; zip?: string };
   try {
@@ -322,7 +330,7 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
   }
 
   const [roofResult, floodZone, folioData] = await Promise.all([
-    GOOGLE_API_KEY ? fetchRoofData(lat, lng, GOOGLE_API_KEY, SOLAR_CACHE) : Promise.resolve(null),
+    solarApiKey ? fetchRoofData(lat, lng, solarApiKey, SOLAR_CACHE, solarReferer) : Promise.resolve(null),
     fetchFloodZone(lat, lng),
     fetchFolioWithCache(address, zip, lat, lng, FOLIO_CACHE),
   ]);
@@ -348,8 +356,8 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
 
   const result = { roof, folio: folioData.folio, floodZone, property, permits, hvhz: folioData.hvhz };
 
-  // Don't cache when quota exhausted — next request should retry Solar after quota resets
-  if (!quotaExhausted && FOLIO_CACHE && (roof || folioData.folio || floodZone)) {
+  // Don't cache when quota exhausted or roof data is missing — next request should retry Solar
+  if (!quotaExhausted && roof !== null && roof?.totalSqft && FOLIO_CACHE && (folioData.folio || floodZone)) {
     await FOLIO_CACHE.put(intelCacheKey, JSON.stringify(result), { expirationTtl: INTEL_TTL });
   }
 
