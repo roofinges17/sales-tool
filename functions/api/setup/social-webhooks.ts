@@ -105,7 +105,7 @@ export async function onRequestPost(ctx: { request: Request; env: Env }) {
     all_secrets_configured: allConfigured,
     channels,
     migration_required: "supabase/migrations/20260427_phase_a2_social_lead_intake.sql",
-    round_robin_pool: "profiles WHERE role=seller AND is_active=true",
+    round_robin_pool: "profiles WHERE role=seller AND status=active",
     entry_stage: "Contact Created (index 0)",
     ghl_push: "enabled (bridge period — service role pushes to GHL via ghl-proxy)",
   });

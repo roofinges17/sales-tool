@@ -78,7 +78,7 @@ async function assignRep(sb: ReturnType<typeof createClient>): Promise<string | 
     .from("profiles")
     .select("id")
     .eq("role", "seller")
-    .eq("is_active", true)
+    .eq("status", "active")
     .order("social_lead_last_assigned_at", { ascending: true, nullsFirst: true })
     .limit(1)
     .maybeSingle();
