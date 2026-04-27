@@ -1,9 +1,7 @@
+# Periodic smoke moved to themis 2hr healthcheck. On-push only.
 name: Smoke — Supabase Tables
 
 on:
-  schedule:
-    # Every 5 minutes — no quota cost, fast, high-value early warning
-    - cron: '*/5 * * * *'
   push:
     branches: [main]
   workflow_dispatch: {}

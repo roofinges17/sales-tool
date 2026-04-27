@@ -1,9 +1,7 @@
+# Periodic smoke moved to themis 2hr healthcheck. On-push only.
 name: Smoke — CF Pages Functions
 
 on:
-  schedule:
-    # Every 30 minutes — external vantage point for CF Pages endpoints
-    - cron: '*/30 * * * *'
   push:
     branches: [main]
   workflow_dispatch:
