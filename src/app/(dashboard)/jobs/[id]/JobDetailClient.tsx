@@ -2,9 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { authedFetch } from "@/lib/api";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { toast } from "sonner";
+
+interface PaymentSummary {
+  payment_number: number;
+  percentage: number;
+  amount: number | null;
+  collected_at: string | null;
+}
 
 interface Crew {
   id: string;
@@ -89,6 +97,7 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
 export default function JobDetailClient() {
   const [job, setJob] = useState<JobDetail | null>(null);
   const [crews, setCrews] = useState<Crew[]>([]);
+  const [payments, setPayments] = useState<PaymentSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [selectedCrew, setSelectedCrew] = useState<string>("");
@@ -103,6 +112,7 @@ export default function JobDetailClient() {
     if (!jobId || jobId === "stub") return;
     loadJob();
     loadCrews();
+    loadPayments();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
@@ -142,6 +152,15 @@ export default function JobDetailClient() {
     setCrews((data as Crew[]) ?? []);
   }
 
+  async function loadPayments() {
+    const { data } = await supabase()
+      .from("job_payments")
+      .select("payment_number, percentage, amount, collected_at")
+      .eq("job_id", jobId)
+      .order("payment_number");
+    setPayments((data as PaymentSummary[]) ?? []);
+  }
+
   async function advanceStage() {
     if (!job) return;
     const stages = stageList(job.job_type);
@@ -154,10 +173,17 @@ export default function JobDetailClient() {
       .eq("id", job.id);
     if (error) {
       toast.error("Failed to advance stage");
-    } else {
-      setJob({ ...job, stage: newStage });
-      toast.success(`Moved to: ${stages[newStage]}`);
+      setSaving(false);
+      return;
     }
+    setJob({ ...job, stage: newStage });
+    toast.success(`Moved to: ${stages[newStage]}`);
+    // Best-effort GHL sync — don't block UI on failure
+    authedFetch("/api/ghl/sync-job-stage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ job_id: job.id, stage: newStage, job_type: job.job_type }),
+    }).catch(() => { /* silently ignore */ });
     setSaving(false);
   }
 
@@ -278,6 +304,52 @@ export default function JobDetailClient() {
           <p className="text-xs text-green-400 font-medium">Job closed</p>
         )}
       </div>
+
+      {/* Payment Progress */}
+      {(() => {
+        const MILESTONE_PERCENTAGES: Record<number, number> = { 1: 30, 2: 30, 3: 30, 4: 10 };
+        const totalCollected = payments.reduce((s, p) => s + (p.collected_at ? (p.amount ?? 0) : 0), 0);
+        const pctCollected = job.contract_price ? Math.round((totalCollected / job.contract_price) * 100) : 0;
+        const nextDue = [1, 2, 3, 4].find((n) => !payments.find((p) => p.payment_number === n && p.collected_at));
+        const collectedCount = payments.filter((p) => p.collected_at).length;
+        return (
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Payments</h2>
+              <a href={`/jobs/${job.id}/payments/`} className="text-xs text-brand hover:underline">
+                Manage →
+              </a>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-zinc-400">{collectedCount} of 4 collected</span>
+              <span className="text-zinc-200 font-medium">{pctCollected}%</span>
+            </div>
+            {/* 4-segment bar */}
+            <div className="flex h-2 gap-0.5 rounded-full overflow-hidden">
+              {[1, 2, 3, 4].map((n) => {
+                const pmt = payments.find((p) => p.payment_number === n);
+                const collected = !!pmt?.collected_at;
+                const pct = MILESTONE_PERCENTAGES[n];
+                return (
+                  <div
+                    key={n}
+                    className={`transition-all ${collected ? "bg-brand" : "bg-zinc-800"}`}
+                    style={{ flex: pct }}
+                  />
+                );
+              })}
+            </div>
+            {nextDue && (
+              <p className="text-xs text-zinc-500">
+                Next due: Payment {nextDue} ({MILESTONE_PERCENTAGES[nextDue]}%)
+              </p>
+            )}
+            {!nextDue && collectedCount === 4 && (
+              <p className="text-xs text-green-400 font-medium">All payments collected</p>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Assignment + Schedule */}
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5 space-y-4">
