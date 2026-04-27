@@ -48,15 +48,41 @@ export interface Account {
 
 export interface Contact {
   id: string;
-  account_id: string;
+  account_id?: string | null;
   first_name: string;
   last_name: string;
   email?: string | null;
   phone?: string | null;
   title?: string | null;
-  is_primary: boolean;
+  is_primary?: boolean;
   role?: "HOMEOWNER" | "SPOUSE" | "TENANT" | "PROPERTY_MANAGER" | "REALTOR" | "OTHER" | null;
   notes?: string | null;
+  ghl_contact_id?: string | null;
+  preferred_language: "en" | "es";
+  // Lead qualification fields
+  owner_status?: string | null;
+  reroof_timeline?: string | null;
+  folio_number?: string | null;
+  full_address?: string | null;
+  // Roof spec
+  roof_color?: string | null;
+  roof_type_current?: string[] | null;
+  roof_type_sold?: string[] | null;
+  roof_size?: string | null;
+  roof_size_sf?: string | null;
+  hoa?: string | null;
+  // Financial / contract
+  contract_price?: number | null;
+  total_price?: number | null;
+  estimate_number?: string | null;
+  estimate_date?: string | null;
+  contract_url?: string | null;
+  payment_1?: number | null;
+  payment_2?: number | null;
+  payment_3?: number | null;
+  payment_4?: number | null;
+  // Service / intake
+  services_requested?: string[] | null;
   created_at: string;
   updated_at: string;
 }
@@ -137,4 +163,39 @@ export interface CompanySettings {
   estimate_prefix: string;
   default_tax_rate: number;
   quote_validity_days: number;
+}
+
+export interface Pipeline {
+  id: string;
+  ghl_pipeline_id: string;
+  location_id: string;
+  name: string;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface Stage {
+  id: string;
+  pipeline_id: string;
+  ghl_stage_id: string;
+  name: string;
+  sort_order: number;
+  color: string;
+  is_terminal: boolean;
+  created_at: string;
+}
+
+export interface Opportunity {
+  id: string;
+  contact_id?: string | null;
+  pipeline_id: string;
+  stage_id: string;
+  value?: number | null;
+  assigned_to_id?: string | null;
+  source?: string | null;
+  ghl_opportunity_id?: string | null;
+  stage_changed_at: string;
+  created_at: string;
+  updated_at: string;
 }
