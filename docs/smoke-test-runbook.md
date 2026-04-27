@@ -6,8 +6,8 @@ Two scripts provide infrastructure monitoring for the sales-tool:
 
 | Script | Targets | Interval | Auth needed |
 |--------|---------|----------|-------------|
-| `scripts/smoke-test.sh` | CF Pages Functions (auth guards) | 30m (GH Actions) | None (all 3 endpoints assert 401) |
-| `scripts/supabase-smoke.sh` | Supabase tables | 5m (GH Actions + watchdog) | Service role key |
+| `scripts/smoke-test.sh` | CF Pages Functions (auth guards) | on push to main only (GH Actions cron removed 2026-04-26) | None (all 3 endpoints assert 401) |
+| `scripts/supabase-smoke.sh` | Supabase tables | on push to main + watchdog 5m (GH Actions cron removed 2026-04-26) | Service role key |
 
 Both exit 0 = green, non-zero = failure with message on stderr.
 
@@ -43,8 +43,8 @@ res pattern-matches on `SMOKE_FAIL[` and forwards to Telegram with severity tagg
 
 ### GitHub Actions (primary, external vantage)
 
-- `smoke-functions.yml` — every 30 minutes + push to main
-- `smoke-supabase.yml` — every 5 minutes + push to main
+- `smoke-functions.yml` — push to main only (GH Actions schedule cron removed 2026-04-26; periodic smoke is now the themis healthcheck)
+- `smoke-supabase.yml` — push to main only (GH Actions schedule cron removed 2026-04-26; periodic coverage via cortextos watchdog 5m cron)
 - Failure notification: GitHub sends email on job failure; also configure a GH Actions
   notification step (see below) to push to the bus.
 
@@ -132,16 +132,14 @@ multiple runs, verify it still exists in Google Maps and update the pool.
 
 | Test | Risk | Root cause | Failure class |
 |------|------|-----------|---------------|
-| address-intel HTTP 200 | Low 5% | CF cold start / network | FAIL |
-| address-intel folio | Medium 20-30% | Miami-Dade GIS maintenance | WARN only |
-| address-intel roof.totalSqft | Medium 15% | Google Solar coverage gaps | WARN only |
-| address-intel hvhz | Very low 1% | Pure ZIP logic, no external deps | FAIL |
-| solar HTTP 200 | Medium 10-15% | Google Solar coverage | WARN (404) / FAIL (5xx) |
-| solar totalArea/segmentCount | Low 3% | Structural data corruption | FAIL |
+| address-intel 401 | Very low 1% | CF routing + auth middleware | FAIL |
+| solar 401 | Very low 1% | CF routing + auth middleware | FAIL |
 | visualize/roof 401 | Very low 1% | CF routing + auth middleware | FAIL |
 | supabase any table | Very low 2% | Supabase SLA >99.9% | FAIL |
 
-Hard-failure rate on a healthy system: ~6-8% per run, driven by GIS/Solar external deps.
+**Note (post-Phase-6.5):** `/api/address-intel` and `/api/solar` are auth-gated. The healthcheck and smoke scripts only test the auth guard (expect 401 anon). Functional tests (folio lookup, totalArea, etc.) require a live user JWT and must be run ad-hoc (see Full Functional Test section below).
+
+Hard-failure rate on a healthy system: ~1-2% per run (auth middleware only — GIS/Solar external-dep flakiness no longer in automated path).
 
 ---
 

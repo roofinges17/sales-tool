@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sales-Tool 32-probe healthcheck
+# Sales-Tool 33-probe healthcheck
 # Usage: ./scripts/healthcheck.sh [PROD_URL]
 # Default target: https://roofing-experts-sales-tool.pages.dev
 
@@ -107,25 +107,27 @@ probe 19  "email send-quote-pdf: no auth → 401"              POST "/api/email/
 probe 20  "accept-automate: no token in body → 400"          POST "/api/accept-automate"              400  '-d "{}"'
 # 2026-04-26: post-Phase-6.5 changed to 401 (auth-gated)
 probe 21  "address-intel: no auth → 401"                     POST "/api/address-intel"               401  '-d "{}"'
-probe 22  "vision damage-detect: no auth → 401"              POST "/api/vision/damage-detect"         401  '-d "{}"'
-probe 23  "vision material-detect: no auth → 401"            POST "/api/vision/material-detect"       401  '-d "{}"'
 # 2026-04-26: post-Phase-6.5 changed to 401 (auth-gated)
-probe 24  "perimeter-detect: no auth → 401"                  POST "/api/vision/perimeter-detect"     401  '-d "{}"'
-probe 25  "visualize/roof: no auth → 401"                    POST "/api/visualize/roof"               401  '-d "{}"'
+probe 22  "solar: no auth → 401"                             POST "/api/solar"                       401  '-d "{}"'
+probe 23  "vision damage-detect: no auth → 401"              POST "/api/vision/damage-detect"         401  '-d "{}"'
+probe 24  "vision material-detect: no auth → 401"            POST "/api/vision/material-detect"       401  '-d "{}"'
 # 2026-04-26: post-Phase-6.5 changed to 401 (auth-gated)
-probe 26  "invite-user: no auth → 401"                       POST "/api/invite-user"                 401  '-d "{}"'
+probe 25  "perimeter-detect: no auth → 401"                  POST "/api/vision/perimeter-detect"     401  '-d "{}"'
+probe 26  "visualize/roof: no auth → 401"                    POST "/api/visualize/roof"               401  '-d "{}"'
 # 2026-04-26: post-Phase-6.5 changed to 401 (auth-gated)
-probe 27  "admin/purge-user: no auth → 401"                  POST "/api/admin/purge-user"            401  '-d "{}"'
-probe 28  "comms/conversations: no auth → 401"               GET  "/api/comms/conversations"          401  ''
-probe 29  "comms/send-email: no auth → 401"                  POST "/api/comms/send-email"             401  '-d "{}"'
+probe 27  "invite-user: no auth → 401"                       POST "/api/invite-user"                 401  '-d "{}"'
+# 2026-04-26: post-Phase-6.5 changed to 401 (auth-gated)
+probe 28  "admin/purge-user: no auth → 401"                  POST "/api/admin/purge-user"            401  '-d "{}"'
+probe 29  "comms/conversations: no auth → 401"               GET  "/api/comms/conversations"          401  ''
+probe 30  "comms/send-email: no auth → 401"                  POST "/api/comms/send-email"             401  '-d "{}"'
 
 echo ""
 echo "── CONTENT INTEGRITY PROBES ────────────────────"
 
 # Check key HTML markers are present
-probe_contains 30 "Login page has Next.js data"  GET "/login/"  "__NEXT_DATA__\|_next\|__next"
-probe_contains 31 "Accept page has Next.js data" GET "/accept/" "__NEXT_DATA__\|_next\|__next"
-probe_contains 32 "Root page has app shell"       GET "/"        "<html\|<!DOCTYPE"
+probe_contains 31 "Login page has Next.js data"  GET "/login/"  "__NEXT_DATA__\|_next\|__next"
+probe_contains 32 "Accept page has Next.js data" GET "/accept/" "__NEXT_DATA__\|_next\|__next"
+probe_contains 33 "Root page has app shell"       GET "/"        "<html\|<!DOCTYPE"
 
 echo ""
 echo "================================================="
